@@ -8,32 +8,42 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ludosample.ui.screens.GameScreen
+import androidx.navigation.compose.rememberNavController
+import com.example.ludosample.data.PlayerPreferences
+import com.example.ludosample.navigation.LudoNavGraph
 import com.example.ludosample.ui.theme.LudoSampleTheme
-import com.example.ludosample.ui.viewmodel.GameViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prefs = PlayerPreferences(applicationContext)
+
         enableEdgeToEdge()
         setContent {
             LudoSampleTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val viewModel: GameViewModel = viewModel()
+                val navController = rememberNavController()
+                var playerId by remember { mutableStateOf("") }
+                var playerName by remember { mutableStateOf("") }
 
-                    LaunchedEffect(Unit) {
-                        viewModel.startLocalGame(
-                            listOf("Alice", "Bob", "Carol", "Dave")
+                LaunchedEffect(Unit) {
+                    playerId = prefs.getPlayerId()
+                    playerName = prefs.getPlayerName()
+                }
+
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    if (playerId.isNotBlank()) {
+                        LudoNavGraph(
+                            navController = navController,
+                            playerId = playerId,
+                            playerName = playerName,
+                            modifier = Modifier.padding(innerPadding)
                         )
                     }
-
-                    GameScreen(
-                        viewModel = viewModel,
-                        currentPlayerId = "player_0",
-                        modifier = Modifier.padding(innerPadding)
-                    )
                 }
             }
         }

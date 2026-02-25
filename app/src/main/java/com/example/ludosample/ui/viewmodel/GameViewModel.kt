@@ -2,6 +2,7 @@ package com.example.ludosample.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ludosample.data.GameRepository
 import com.example.ludosample.engine.BoardConfig
 import com.example.ludosample.engine.BoardType
 import com.example.ludosample.engine.GameEngine
@@ -21,6 +22,8 @@ private const val TIMER_TICK_MS = 1_000L
 
 class GameViewModel : ViewModel() {
 
+    private val repository = GameRepository()
+
     private val _gameState = MutableStateFlow(GameState())
     val gameState: StateFlow<GameState> = _gameState.asStateFlow()
 
@@ -31,12 +34,98 @@ class GameViewModel : ViewModel() {
     val remainingSeconds: StateFlow<Int> = _remainingSeconds.asStateFlow()
 
     private var timerJob: Job? = null
+    private var listenerJob: Job? = null
     private var config: BoardConfig = BoardConfig.Classic
+    private var isOnline = false
+    private var onlinePlayerId = ""
+    private var onlineRoomCode = ""
 
-    /**
-     * Start a local pass-and-play game with the given player names.
-     */
+    // ── Online mode ─────────────────────────────────────────────────
+
+    fun connectToOnlineGame(roomCode: String, playerId: String) {
+        if (listenerJob != null) return
+        isOnline = true
+        onlinePlayerId = playerId
+        onlineRoomCode = roomCode
+
+        listenerJob = viewModelScope.launch {
+            repository.listenToGame(roomCode).collect { state ->
+                config = BoardConfig.forBoardType(state.boardType)
+                _gameState.value = state
+
+                if (state.phase == GamePhase.MOVING && state.currentTurnPlayerId == playerId) {
+                    _validMoves.value = GameEngine.getValidMoves(
+                        config, state, playerId, state.diceValue ?: 0
+                    )
+                } else {
+                    _validMoves.value = emptyList()
+                }
+
+                if (state.phase == GamePhase.ROLLING || state.phase == GamePhase.MOVING) {
+                    startTurnTimerFromServerTime(state.turnStartedAt)
+                } else {
+                    timerJob?.cancel()
+                }
+            }
+        }
+    }
+
+    fun onDiceRollOnline() {
+        val state = _gameState.value
+        if (state.phase != GamePhase.ROLLING) return
+        if (state.currentTurnPlayerId != onlinePlayerId) return
+
+        val diceValue = GameEngine.rollDice()
+        val newState = GameEngine.applyDiceRoll(config, state, diceValue)
+
+        viewModelScope.launch {
+            repository.updateGameState(onlineRoomCode, newState)
+        }
+    }
+
+    fun onTokenSelectedOnline(tokenIndex: Int) {
+        val state = _gameState.value
+        if (state.phase != GamePhase.MOVING) return
+        if (state.currentTurnPlayerId != onlinePlayerId) return
+
+        val newState = GameEngine.applyTokenMove(config, state, onlinePlayerId, tokenIndex)
+
+        viewModelScope.launch {
+            repository.updateGameState(onlineRoomCode, newState)
+        }
+    }
+
+    private fun startTurnTimerFromServerTime(turnStartedAt: Long) {
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            while (true) {
+                val elapsed = System.currentTimeMillis() - turnStartedAt
+                val remaining = ((TURN_TIMEOUT_MS - elapsed) / 1000).toInt().coerceAtLeast(0)
+                _remainingSeconds.value = remaining
+
+                if (remaining <= 0) {
+                    handleOnlineTimeout()
+                    break
+                }
+                delay(TIMER_TICK_MS)
+            }
+        }
+    }
+
+    private fun handleOnlineTimeout() {
+        val state = _gameState.value
+        if (state.phase == GamePhase.FINISHED) return
+
+        val newState = GameEngine.handleTurnTimeout(config, state)
+        viewModelScope.launch {
+            repository.updateGameState(onlineRoomCode, newState)
+        }
+    }
+
+    // ── Local mode ──────────────────────────────────────────────────
+
     fun startLocalGame(playerNames: List<String>) {
+        isOnline = false
         val playerCount = playerNames.size
         val boardType = BoardType.forPlayerCount(playerCount)
         config = BoardConfig.forBoardType(boardType)
@@ -65,6 +154,11 @@ class GameViewModel : ViewModel() {
     }
 
     fun onDiceRoll() {
+        if (isOnline) {
+            onDiceRollOnline()
+            return
+        }
+
         val state = _gameState.value
         if (state.phase != GamePhase.ROLLING) return
 
@@ -83,6 +177,11 @@ class GameViewModel : ViewModel() {
     }
 
     fun onTokenSelected(tokenIndex: Int) {
+        if (isOnline) {
+            onTokenSelectedOnline(tokenIndex)
+            return
+        }
+
         val state = _gameState.value
         if (state.phase != GamePhase.MOVING) return
 
@@ -130,11 +229,7 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    fun currentPlayerName(): String {
-        val state = _gameState.value
-        return state.players[state.currentTurnPlayerId]?.name ?: ""
-    }
-
+    @Suppress("unused")
     fun currentPlayerColor(): PlayerColor {
         val state = _gameState.value
         return state.players[state.currentTurnPlayerId]?.color ?: PlayerColor.RED
@@ -143,5 +238,6 @@ class GameViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
+        listenerJob?.cancel()
     }
 }
