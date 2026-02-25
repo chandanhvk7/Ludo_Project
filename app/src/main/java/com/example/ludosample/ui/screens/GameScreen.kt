@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,7 +50,9 @@ fun GameScreen(
     val validMoves by viewModel.validMoves.collectAsState()
     val remainingSeconds by viewModel.remainingSeconds.collectAsState()
 
-    val isMyTurn = gameState.currentTurnPlayerId == currentPlayerId
+    val myPlayer = gameState.players[currentPlayerId]
+    val isSpectating = myPlayer?.isFinished == true || myPlayer?.isEliminated == true
+    val isMyTurn = !isSpectating && gameState.currentTurnPlayerId == currentPlayerId
     val canRoll = isMyTurn && gameState.phase == GamePhase.ROLLING
     val currentPlayer = gameState.players[gameState.currentTurnPlayerId]
 
@@ -86,6 +89,20 @@ fun GameScreen(
             }
 
             TimerIndicator(remainingSeconds)
+        }
+
+        if (isSpectating) {
+            val rank = gameState.finishOrder.indexOf(currentPlayerId) + 1
+            val label = if (myPlayer?.isFinished == true) "You finished ${ordinal(rank)}!" else "You were eliminated"
+            Text(
+                text = label,
+                color = Color(0xFFFFD600),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -226,4 +243,12 @@ private fun TimerIndicator(seconds: Int) {
             fontWeight = FontWeight.Bold
         )
     }
+}
+
+private fun ordinal(n: Int): String = when {
+    n % 100 in 11..13 -> "${n}th"
+    n % 10 == 1 -> "${n}st"
+    n % 10 == 2 -> "${n}nd"
+    n % 10 == 3 -> "${n}rd"
+    else -> "${n}th"
 }

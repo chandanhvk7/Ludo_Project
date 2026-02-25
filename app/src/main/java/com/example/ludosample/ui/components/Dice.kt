@@ -1,16 +1,28 @@
 package com.example.ludosample.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 @Composable
 fun Dice(
@@ -20,13 +32,43 @@ fun Dice(
     modifier: Modifier = Modifier,
     size: Dp = 64.dp
 ) {
-    val bgColor = if (enabled) Color.White else Color(0xFFE0E0E0)
-    val dotColor = if (enabled) Color(0xFF212121) else Color(0xFF9E9E9E)
+    var isRolling by remember { mutableStateOf(false) }
+    var displayValue by remember { mutableIntStateOf(value ?: 0) }
+    val rotation = remember { Animatable(0f) }
+
+    LaunchedEffect(value) {
+        if (value != null && value in 1..6) {
+            isRolling = true
+            repeat(8) {
+                displayValue = (1..6).random()
+                rotation.animateTo(
+                    rotation.value + 45f,
+                    animationSpec = tween(50, easing = LinearEasing)
+                )
+                delay(30)
+            }
+            displayValue = value
+            rotation.animateTo(0f, animationSpec = tween(100))
+            isRolling = false
+        }
+    }
+
+    val bgColor = when {
+        isRolling -> Color(0xFFFFF9C4)
+        enabled -> Color.White
+        else -> Color(0xFFE0E0E0)
+    }
+    val dotColor = if (enabled || isRolling) Color(0xFF212121) else Color(0xFF9E9E9E)
 
     Canvas(
         modifier = modifier
             .size(size)
-            .then(if (enabled) Modifier.clickable { onClick() } else Modifier)
+            .graphicsLayer {
+                rotationZ = rotation.value
+                scaleX = if (isRolling) 1.1f else 1f
+                scaleY = if (isRolling) 1.1f else 1f
+            }
+            .then(if (enabled && !isRolling) Modifier.clickable { onClick() } else Modifier)
     ) {
         val s = this.size.width
         val cornerR = s * 0.15f
@@ -41,11 +83,12 @@ fun Dice(
             color = Color(0xFF424242),
             cornerRadius = CornerRadius(cornerR, cornerR),
             size = this.size,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = s * 0.04f)
+            style = Stroke(width = s * 0.04f)
         )
 
-        if (value != null && value in 1..6) {
-            drawDiceDots(value, dotColor, dotRadius, s)
+        val showValue = if (isRolling) displayValue else (value ?: 0)
+        if (showValue in 1..6) {
+            drawDiceDots(showValue, dotColor, dotRadius, s)
         } else {
             drawCircle(
                 color = dotColor.copy(alpha = 0.3f),
