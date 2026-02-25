@@ -20,22 +20,49 @@ class LobbyViewModel : ViewModel() {
     private val _gameState = MutableStateFlow(GameState())
     val gameState: StateFlow<GameState> = _gameState.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
     private var listenerJob: Job? = null
     private var roomCode: String = ""
 
     fun createRoom(playerId: String, playerName: String) {
+        if (_isLoading.value) return
+        _isLoading.value = true
+        _errorMessage.value = null
+
         viewModelScope.launch {
-            roomCode = repository.createRoom(playerId, playerName, 4)
-            listenToRoom(roomCode)
+            try {
+                roomCode = repository.createRoom(playerId, playerName, 4)
+                listenToRoom(roomCode)
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to create room: ${e.message ?: "Check your internet connection and Firebase setup"}"
+                _isLoading.value = false
+            }
         }
     }
 
     fun joinRoom(roomCode: String, playerId: String, playerName: String) {
+        if (_isLoading.value) return
+        _isLoading.value = true
+        _errorMessage.value = null
+
         viewModelScope.launch {
-            val success = repository.joinRoom(roomCode, playerId, playerName)
-            if (success) {
-                this@LobbyViewModel.roomCode = roomCode
-                listenToRoom(roomCode)
+            try {
+                val success = repository.joinRoom(roomCode, playerId, playerName)
+                if (success) {
+                    this@LobbyViewModel.roomCode = roomCode
+                    listenToRoom(roomCode)
+                } else {
+                    _errorMessage.value = "Could not join room. It may be full or already started."
+                    _isLoading.value = false
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to join room: ${e.message ?: "Check your connection"}"
+                _isLoading.value = false
             }
         }
     }
@@ -46,9 +73,11 @@ class LobbyViewModel : ViewModel() {
         if (currentState.phase != GamePhase.WAITING_FOR_PLAYERS) return
 
         viewModelScope.launch {
-            val boardType = BoardType.forPlayerCount(count)
-            val updated = currentState.copy(maxPlayers = count, boardType = boardType)
-            repository.updateGameState(roomCode, updated)
+            try {
+                val boardType = BoardType.forPlayerCount(count)
+                val updated = currentState.copy(maxPlayers = count, boardType = boardType)
+                repository.updateGameState(roomCode, updated)
+            } catch (_: Exception) { }
         }
     }
 
@@ -58,21 +87,35 @@ class LobbyViewModel : ViewModel() {
         if (currentState.players.size < 2) return
 
         viewModelScope.launch {
-            val initialState = GameEngine.createInitialGameState(
-                roomCode = roomCode,
-                boardType = currentState.boardType,
-                players = currentState.players,
-                creatorPlayerId = currentState.creatorPlayerId
-            )
-            repository.startGame(roomCode, initialState)
+            try {
+                val initialState = GameEngine.createInitialGameState(
+                    roomCode = roomCode,
+                    boardType = currentState.boardType,
+                    players = currentState.players,
+                    creatorPlayerId = currentState.creatorPlayerId
+                )
+                repository.startGame(roomCode, initialState)
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to start game: ${e.message}"
+            }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     private fun listenToRoom(code: String) {
         listenerJob?.cancel()
         listenerJob = viewModelScope.launch {
-            repository.listenToGame(code).collect { state ->
-                _gameState.value = state
+            try {
+                repository.listenToGame(code).collect { state ->
+                    _gameState.value = state
+                    _isLoading.value = false
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Lost connection to room: ${e.message}"
+                _isLoading.value = false
             }
         }
     }

@@ -23,14 +23,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ludosample.engine.Player
 import com.example.ludosample.engine.PlayerColor
+import com.example.ludosample.ui.theme.SurfaceVariant
+import com.example.ludosample.ui.theme.TextPrimary
+import com.example.ludosample.ui.theme.TextSecondary
 
 private val infoColorMap = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
-    PlayerColor.ORANGE to Color(0xFFEF6C00),
-    PlayerColor.PURPLE to Color(0xFF6A1B9A)
+    PlayerColor.RED to Color(0xFFE57373),
+    PlayerColor.GREEN to Color(0xFF81C784),
+    PlayerColor.YELLOW to Color(0xFFFFD54F),
+    PlayerColor.BLUE to Color(0xFF64B5F6),
+    PlayerColor.ORANGE to Color(0xFFFFB74D),
+    PlayerColor.PURPLE to Color(0xFFCE93D8)
 )
 
 @Composable
@@ -70,7 +73,7 @@ private fun PlayerInfoChip(
         modifier = modifier
             .padding(2.dp)
             .background(
-                if (isActive) Color.White.copy(alpha = 0.1f) else Color.Transparent,
+                if (isActive) SurfaceVariant else Color.Transparent,
                 RoundedCornerShape(8.dp)
             )
             .padding(4.dp),
@@ -85,7 +88,7 @@ private fun PlayerInfoChip(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = player.name,
-            color = Color.White.copy(alpha = alpha),
+            color = TextPrimary.copy(alpha = alpha),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
             maxLines = 1
@@ -94,14 +97,14 @@ private fun PlayerInfoChip(
         if (tokensHome > 0 || player.isFinished) {
             Text(
                 text = if (player.isFinished) "Done" else "$tokensHome/4",
-                color = Color.White.copy(alpha = 0.6f),
+                color = TextSecondary,
                 style = MaterialTheme.typography.labelSmall
             )
         }
         if (player.isEliminated) {
             Text(
                 text = "Out",
-                color = Color(0xFFF44336).copy(alpha = 0.7f),
+                color = Color(0xFFF85149).copy(alpha = 0.7f),
                 style = MaterialTheme.typography.labelSmall
             )
         }

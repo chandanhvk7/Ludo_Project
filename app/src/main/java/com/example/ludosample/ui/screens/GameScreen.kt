@@ -7,13 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,15 +29,20 @@ import com.example.ludosample.engine.GamePhase
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.ui.components.Dice
 import com.example.ludosample.ui.components.LudoBoard
+import com.example.ludosample.ui.theme.Accent
+import com.example.ludosample.ui.theme.BoardBackdrop
+import com.example.ludosample.ui.theme.SurfaceVariant
+import com.example.ludosample.ui.theme.TextPrimary
+import com.example.ludosample.ui.theme.TextSecondary
 import com.example.ludosample.ui.viewmodel.GameViewModel
 
 private val colorMap = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
-    PlayerColor.ORANGE to Color(0xFFEF6C00),
-    PlayerColor.PURPLE to Color(0xFF6A1B9A)
+    PlayerColor.RED to Color(0xFFE57373),
+    PlayerColor.GREEN to Color(0xFF81C784),
+    PlayerColor.YELLOW to Color(0xFFFFD54F),
+    PlayerColor.BLUE to Color(0xFF64B5F6),
+    PlayerColor.ORANGE to Color(0xFFFFB74D),
+    PlayerColor.PURPLE to Color(0xFFCE93D8)
 )
 
 @Composable
@@ -59,7 +64,7 @@ fun GameScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1B5E20))
+            .background(BoardBackdrop)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -82,7 +87,7 @@ fun GameScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "${currentPlayer?.name ?: "?"}'s turn",
-                    color = Color.White,
+                    color = TextPrimary,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -96,11 +101,11 @@ fun GameScreen(
             val label = if (myPlayer?.isFinished == true) "You finished ${ordinal(rank)}!" else "You were eliminated"
             Text(
                 text = label,
-                color = Color(0xFFFFD600),
+                color = Accent,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .background(SurfaceVariant, RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             )
         }
@@ -147,13 +152,13 @@ fun GameScreen(
                 }
                 Text(
                     text = phaseText,
-                    color = Color.White,
+                    color = TextPrimary,
                     style = MaterialTheme.typography.bodyLarge
                 )
                 if (gameState.diceValue != null && gameState.phase != GamePhase.ROLLING) {
                     Text(
                         text = "Rolled: ${gameState.diceValue}",
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = TextSecondary,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -190,7 +195,7 @@ fun GameScreen(
                     )
                     Text(
                         text = player.name,
-                        color = Color.White.copy(alpha = alpha),
+                        color = TextPrimary.copy(alpha = alpha),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
                     )
@@ -198,7 +203,7 @@ fun GameScreen(
                     if (tokensHome > 0) {
                         Text(
                             text = "$tokensHome/4",
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = TextSecondary,
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -212,7 +217,7 @@ fun GameScreen(
             val winner = gameState.players[gameState.winner]
             Text(
                 text = "${winner?.name ?: "Unknown"} wins!",
-                color = Color(0xFFFFD600),
+                color = Accent,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -223,15 +228,15 @@ fun GameScreen(
 @Composable
 private fun TimerIndicator(seconds: Int) {
     val timerColor = when {
-        seconds > 10 -> Color(0xFF4CAF50)
-        seconds > 5 -> Color(0xFFFFC107)
-        else -> Color(0xFFF44336)
+        seconds > 10 -> Color(0xFF66BB6A)
+        seconds > 5 -> Color(0xFFFFCA28)
+        else -> Color(0xFFEF5350)
     }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
-                .size(12.dp)
+                .size(10.dp)
                 .clip(CircleShape)
                 .background(timerColor)
         )

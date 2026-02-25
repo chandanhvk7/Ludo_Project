@@ -72,6 +72,8 @@ fun LudoNavGraph(
             }
 
             val gameState by lobbyViewModel.gameState.collectAsState()
+            val isLoading by lobbyViewModel.isLoading.collectAsState()
+            val errorMessage by lobbyViewModel.errorMessage.collectAsState()
             val isCreator = gameState.creatorPlayerId == playerId
 
             if (gameState.phase == GamePhase.ROLLING || gameState.phase == GamePhase.MOVING) {
@@ -85,6 +87,8 @@ fun LudoNavGraph(
                     gameState = gameState,
                     playerId = playerId,
                     isCreator = isCreator,
+                    isLoading = isLoading,
+                    errorMessage = errorMessage,
                     onPlayerCountChanged = { count ->
                         lobbyViewModel.updateMaxPlayers(count)
                     },

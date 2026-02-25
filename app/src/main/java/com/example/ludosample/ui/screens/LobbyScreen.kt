@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -36,14 +37,21 @@ import androidx.compose.ui.unit.dp
 import com.example.ludosample.engine.BoardType
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.PlayerColor
+import com.example.ludosample.ui.theme.Accent
+import com.example.ludosample.ui.theme.Background
+import com.example.ludosample.ui.theme.ErrorRed
+import com.example.ludosample.ui.theme.SurfaceVariant
+import com.example.ludosample.ui.theme.TextMuted
+import com.example.ludosample.ui.theme.TextPrimary
+import com.example.ludosample.ui.theme.TextSecondary
 
 private val lobbyColorMap = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
-    PlayerColor.ORANGE to Color(0xFFEF6C00),
-    PlayerColor.PURPLE to Color(0xFF6A1B9A)
+    PlayerColor.RED to Color(0xFFE57373),
+    PlayerColor.GREEN to Color(0xFF81C784),
+    PlayerColor.YELLOW to Color(0xFFFFD54F),
+    PlayerColor.BLUE to Color(0xFF64B5F6),
+    PlayerColor.ORANGE to Color(0xFFFFB74D),
+    PlayerColor.PURPLE to Color(0xFFCE93D8)
 )
 
 @Composable
@@ -51,6 +59,8 @@ fun LobbyScreen(
     gameState: GameState,
     playerId: String,
     isCreator: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
     onPlayerCountChanged: (Int) -> Unit,
     onStartGame: () -> Unit,
     modifier: Modifier = Modifier
@@ -62,19 +72,50 @@ fun LobbyScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1B5E20))
+            .background(Background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Error banner
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage,
+                color = ErrorRed,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ErrorRed.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Loading state
+        if (isLoading && gameState.roomCode.isBlank()) {
+            Spacer(modifier = Modifier.weight(1f))
+            CircularProgressIndicator(color = Accent)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Setting up room...",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            return
+        }
+
         Text(
             text = "Room Code",
-            color = Color.White.copy(alpha = 0.7f),
+            color = TextSecondary,
             style = MaterialTheme.typography.titleSmall
         )
 
         Text(
-            text = gameState.roomCode,
-            color = Color(0xFFFFD600),
+            text = gameState.roomCode.ifBlank { "------" },
+            color = Accent,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             letterSpacing = MaterialTheme.typography.displaySmall.letterSpacing * 2
@@ -82,7 +123,7 @@ fun LobbyScreen(
 
         Text(
             text = "Share this code with friends",
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextMuted,
             style = MaterialTheme.typography.bodySmall
         )
 
@@ -98,7 +139,7 @@ fun LobbyScreen(
 
             Text(
                 text = "Players: $selectedPlayerCount ($boardLabel)",
-                color = Color.White,
+                color = TextPrimary,
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -112,8 +153,9 @@ fun LobbyScreen(
                 valueRange = 2f..6f,
                 steps = 3,
                 colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFFFFD600),
-                    activeTrackColor = Color(0xFF66BB6A)
+                    thumbColor = Accent,
+                    activeTrackColor = Accent.copy(alpha = 0.6f),
+                    inactiveTrackColor = SurfaceVariant
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -127,16 +169,16 @@ fun LobbyScreen(
             }
             Text(
                 text = "Max players: ${gameState.maxPlayers} ($boardLabel)",
-                color = Color.White,
+                color = TextPrimary,
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Player list
+        // Player list header
         Text(
             text = "Players ($playerCount/${gameState.maxPlayers})",
-            color = Color.White,
+            color = TextSecondary,
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.fillMaxWidth()
         )
@@ -151,12 +193,12 @@ fun LobbyScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .padding(vertical = 4.dp)
                     .background(
-                        if (isMe) Color.White.copy(alpha = 0.1f) else Color.Transparent,
-                        RoundedCornerShape(8.dp)
+                        if (isMe) SurfaceVariant else Color.Transparent,
+                        RoundedCornerShape(10.dp)
                     )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -165,14 +207,14 @@ fun LobbyScreen(
                         .clip(CircleShape)
                         .background(pColor)
                         .then(
-                            if (isMe) Modifier.border(2.dp, Color.White, CircleShape)
+                            if (isMe) Modifier.border(2.dp, TextPrimary, CircleShape)
                             else Modifier
                         )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = player.name,
-                    color = Color.White,
+                    color = TextPrimary,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (isMe) FontWeight.Bold else FontWeight.Normal
                 )
@@ -180,7 +222,7 @@ fun LobbyScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "HOST",
-                        color = Color(0xFFFFD600),
+                        color = Accent,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -189,7 +231,7 @@ fun LobbyScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "(you)",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = TextMuted,
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -198,11 +240,10 @@ fun LobbyScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Waiting / Start
         if (canStart) {
             Button(
                 onClick = onStartGame,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD600)),
+                colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -210,7 +251,7 @@ fun LobbyScreen(
             ) {
                 Text(
                     text = "Start Game",
-                    color = Color(0xFF1B5E20),
+                    color = Background,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -218,7 +259,7 @@ fun LobbyScreen(
         } else if (!isCreator) {
             Text(
                 text = "Waiting for host to start...",
-                color = Color.White.copy(alpha = 0.6f),
+                color = TextSecondary,
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -226,11 +267,13 @@ fun LobbyScreen(
         } else {
             Text(
                 text = "Need at least 2 players to start",
-                color = Color.White.copy(alpha = 0.4f),
+                color = TextMuted,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }

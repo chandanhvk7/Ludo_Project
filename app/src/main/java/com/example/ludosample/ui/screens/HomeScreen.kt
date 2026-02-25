@@ -22,10 +22,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.ludosample.ui.theme.Accent
+import com.example.ludosample.ui.theme.Background
+import com.example.ludosample.ui.theme.BlueButton
+import com.example.ludosample.ui.theme.GreenButton
+import com.example.ludosample.ui.theme.TextMuted
+import com.example.ludosample.ui.theme.TextPrimary
+import com.example.ludosample.ui.theme.TextSecondary
 
 @Composable
 fun HomeScreen(
@@ -38,19 +44,19 @@ fun HomeScreen(
     var roomCode by rememberSaveable { mutableStateOf("") }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = Color.White,
-        unfocusedTextColor = Color.White,
-        focusedBorderColor = Color(0xFF66BB6A),
-        unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
-        focusedLabelColor = Color(0xFF66BB6A),
-        unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
-        cursorColor = Color.White
+        focusedTextColor = TextPrimary,
+        unfocusedTextColor = TextPrimary,
+        focusedBorderColor = Accent,
+        unfocusedBorderColor = TextMuted,
+        focusedLabelColor = Accent,
+        unfocusedLabelColor = TextSecondary,
+        cursorColor = Accent
     )
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1B5E20))
+            .background(Background)
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -59,14 +65,14 @@ fun HomeScreen(
             text = "Ludo",
             style = MaterialTheme.typography.displayLarge,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFFFFD600),
+            color = Accent,
             textAlign = TextAlign.Center
         )
 
         Text(
             text = "Online Multiplayer",
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.7f)
+            color = TextSecondary
         )
 
         Spacer(modifier = Modifier.height(48.dp))
@@ -85,7 +91,7 @@ fun HomeScreen(
         Button(
             onClick = { if (playerName.isNotBlank()) onCreateRoom(playerName.trim()) },
             enabled = playerName.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047)),
+            colors = ButtonDefaults.buttonColors(containerColor = GreenButton),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -98,7 +104,7 @@ fun HomeScreen(
 
         Text(
             text = "— or join a friend's room —",
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextMuted,
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -121,7 +127,7 @@ fun HomeScreen(
                     onJoinRoom(playerName.trim(), roomCode.trim())
             },
             enabled = playerName.isNotBlank() && roomCode.length == 6,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+            colors = ButtonDefaults.buttonColors(containerColor = BlueButton),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()

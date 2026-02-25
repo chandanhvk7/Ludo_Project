@@ -28,24 +28,31 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.PlayerColor
+import com.example.ludosample.ui.theme.Accent
+import com.example.ludosample.ui.theme.Background
+import com.example.ludosample.ui.theme.ErrorRed
+import com.example.ludosample.ui.theme.GreenButton
+import com.example.ludosample.ui.theme.SurfaceVariant
+import com.example.ludosample.ui.theme.TextPrimary
+import com.example.ludosample.ui.theme.TextSecondary
 
 private val rankColorMap = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
-    PlayerColor.ORANGE to Color(0xFFEF6C00),
-    PlayerColor.PURPLE to Color(0xFF6A1B9A)
+    PlayerColor.RED to Color(0xFFE57373),
+    PlayerColor.GREEN to Color(0xFF81C784),
+    PlayerColor.YELLOW to Color(0xFFFFD54F),
+    PlayerColor.BLUE to Color(0xFF64B5F6),
+    PlayerColor.ORANGE to Color(0xFFFFB74D),
+    PlayerColor.PURPLE to Color(0xFFCE93D8)
 )
 
 private val rankLabels = listOf("1st", "2nd", "3rd", "4th", "5th", "6th")
 private val rankColors = listOf(
-    Color(0xFFFFD600),
+    Color(0xFFE8B931),
     Color(0xFFC0C0C0),
     Color(0xFFCD7F32),
-    Color.White.copy(alpha = 0.6f),
-    Color.White.copy(alpha = 0.5f),
-    Color.White.copy(alpha = 0.4f)
+    Color(0xFF8B949E),
+    Color(0xFF6E7681),
+    Color(0xFF545D68)
 )
 
 @Composable
@@ -58,7 +65,7 @@ fun GameOverScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1B5E20))
+            .background(Background)
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -67,7 +74,7 @@ fun GameOverScreen(
             text = "Game Over",
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFFFFD600),
+            color = Accent,
             textAlign = TextAlign.Center
         )
 
@@ -78,7 +85,7 @@ fun GameOverScreen(
             Text(
                 text = "${winner.name} wins!",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -88,7 +95,7 @@ fun GameOverScreen(
         Text(
             text = "Rankings",
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.8f)
+            color = TextSecondary
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -102,34 +109,34 @@ fun GameOverScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .background(SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = rankLabels.getOrElse(index) { "${index + 1}th" },
-                    color = rankColors.getOrElse(index) { Color.White.copy(alpha = 0.4f) },
+                    color = rankColors.getOrElse(index) { TextSecondary },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(48.dp)
                 )
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(22.dp)
                         .clip(CircleShape)
                         .background(pColor.copy(alpha = if (isEliminated) 0.4f else 1f))
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = player.name,
-                    color = Color.White.copy(alpha = if (isEliminated) 0.5f else 1f),
+                    color = TextPrimary.copy(alpha = if (isEliminated) 0.5f else 1f),
                     style = MaterialTheme.typography.bodyLarge
                 )
                 if (isEliminated) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "disconnected",
-                        color = Color(0xFFF44336).copy(alpha = 0.7f),
+                        color = ErrorRed.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -140,7 +147,7 @@ fun GameOverScreen(
 
         Button(
             onClick = onPlayAgain,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047)),
+            colors = ButtonDefaults.buttonColors(containerColor = GreenButton),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -153,13 +160,13 @@ fun GameOverScreen(
 
         Button(
             onClick = onGoHome,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
+            colors = ButtonDefaults.buttonColors(containerColor = SurfaceVariant),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
         ) {
-            Text("Back to Home", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("Back to Home", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
