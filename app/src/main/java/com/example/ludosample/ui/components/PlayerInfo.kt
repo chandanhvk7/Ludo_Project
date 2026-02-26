@@ -28,12 +28,12 @@ import com.example.ludosample.ui.theme.TextPrimary
 import com.example.ludosample.ui.theme.TextSecondary
 
 private val infoColorMap = mapOf(
-    PlayerColor.RED to Color(0xFFE57373),
-    PlayerColor.GREEN to Color(0xFF81C784),
-    PlayerColor.YELLOW to Color(0xFFFFD54F),
-    PlayerColor.BLUE to Color(0xFF64B5F6),
-    PlayerColor.ORANGE to Color(0xFFFFB74D),
-    PlayerColor.PURPLE to Color(0xFFCE93D8)
+    PlayerColor.RED to Color(0xFFE53935),
+    PlayerColor.GREEN to Color(0xFF43A047),
+    PlayerColor.YELLOW to Color(0xFFFDD835),
+    PlayerColor.BLUE to Color(0xFF1E88E5),
+    PlayerColor.ORANGE to Color(0xFFEF6C00),
+    PlayerColor.PURPLE to Color(0xFF6A1B9A)
 )
 
 @Composable

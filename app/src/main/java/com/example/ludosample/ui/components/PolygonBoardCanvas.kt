@@ -1,18 +1,28 @@
 package com.example.ludosample.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector2D
+import androidx.compose.animation.core.TwoWayConverter
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +37,12 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
+private val PolyOffsetToVector: TwoWayConverter<Offset, AnimationVector2D> =
+    TwoWayConverter(
+        convertToVector = { AnimationVector2D(it.x, it.y) },
+        convertFromVector = { Offset(it.v1, it.v2) }
+    )
+
 private val SLOT_COLORS = listOf(
     Color(0xFFE53935),
     Color(0xFF43A047),
@@ -37,10 +53,10 @@ private val SLOT_COLORS = listOf(
 )
 
 private val TOKEN_FILL_COLORS = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
+    PlayerColor.RED to Color(0xFFE53935),
+    PlayerColor.GREEN to Color(0xFF43A047),
+    PlayerColor.YELLOW to Color(0xFFFDD835),
+    PlayerColor.BLUE to Color(0xFF1E88E5),
     PlayerColor.ORANGE to Color(0xFFEF6C00),
     PlayerColor.PURPLE to Color(0xFF6A1B9A)
 )
@@ -206,11 +222,56 @@ private fun PolygonBoardCanvas(
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
+    var canvasWidth by remember { mutableFloatStateOf(0f) }
+    var canvasHeight by remember { mutableFloatStateOf(0f) }
+    val animatedOffsets = remember {
+        mutableStateMapOf<String, Animatable<Offset, AnimationVector2D>>()
+    }
+    val prevPositions = remember { mutableStateMapOf<String, Pair<Int, Boolean>>() }
+
+    if (canvasWidth > 0f) {
+        val boardSize = min(canvasWidth, canvasHeight)
+        val center = Offset(canvasWidth / 2f, canvasHeight / 2f)
+        val radius = boardSize * 0.42f
+        val layout = PolygonBoardLayout(sides, center, radius, config)
+
+        for ((playerId, player) in gameState.players) {
+            if (player.isEliminated) continue
+            player.tokens.forEachIndexed { index, token ->
+                val key = "${playerId}_$index"
+                val target = polygonTokenOffset(config, token, player.slotIndex, index, layout)
+                val anim = animatedOffsets.getOrPut(key) {
+                    Animatable(target, PolyOffsetToVector)
+                }
+                val slotIndex = player.slotIndex
+                LaunchedEffect(key, token.position, token.isHome, canvasWidth) {
+                    val prev = prevPositions[key]
+                    if (prev == null || (prev.first == token.position && prev.second == token.isHome)) {
+                        anim.snapTo(target)
+                    } else {
+                        val waypoints = buildPolyPathWaypoints(
+                            config, prev.first, prev.second,
+                            token.position, token.isHome
+                        )
+                        for ((pos, isHome) in waypoints) {
+                            val wp = polygonTokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
+                            anim.animateTo(wp, animationSpec = tween(120))
+                        }
+                    }
+                    prevPositions[key] = token.position to token.isHome
+                }
+            }
+        }
+    }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .onSizeChanged {
+                canvasWidth = it.width.toFloat()
+                canvasHeight = it.height.toFloat()
+            }
             .pointerInput(gameState, validMoves) {
                 detectTapGestures { tapOffset ->
                     val boardSize = min(size.width, size.height).toFloat()
@@ -234,7 +295,10 @@ private fun PolygonBoardCanvas(
         drawPolygonHomeColumns(layout, config)
         drawPolygonCenter(sides, center, radius * 0.15f)
         drawPolygonYards(sides, layout, config, gameState)
-        drawPolygonTokens(config, gameState, layout, currentPlayerId, validMoves, textMeasurer)
+        drawPolygonTokensAnimated(
+            config, gameState, layout, currentPlayerId, validMoves,
+            textMeasurer, animatedOffsets
+        )
     }
 }
 
@@ -353,13 +417,14 @@ private fun DrawScope.drawPolygonYards(
     }
 }
 
-private fun DrawScope.drawPolygonTokens(
+private fun DrawScope.drawPolygonTokensAnimated(
     config: BoardConfig,
     gameState: GameState,
     layout: PolygonBoardLayout,
     currentPlayerId: String,
     validMoves: List<Int>,
-    textMeasurer: androidx.compose.ui.text.TextMeasurer
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    animatedOffsets: Map<String, Animatable<Offset, AnimationVector2D>>
 ) {
     val tokenRadius = layout.cellSize() * 0.35f
     val isMyTurn = gameState.currentTurnPlayerId == currentPlayerId
@@ -371,7 +436,9 @@ private fun DrawScope.drawPolygonTokens(
         player.tokens.forEachIndexed { index, token ->
             if (token.isHome) return@forEachIndexed
 
-            val offset = polygonTokenOffset(config, token, player.slotIndex, index, layout)
+            val key = "${playerId}_$index"
+            val offset = animatedOffsets[key]?.value
+                ?: polygonTokenOffset(config, token, player.slotIndex, index, layout)
 
             val isValid = isMyTurn && playerId == currentPlayerId && index in validMoves
             if (isValid) {
@@ -422,6 +489,21 @@ private fun polygonTokenOffset(
     }
     val homeStep = token.position - config.pathLength
     return layout.homeCellOffset(slotIndex, homeStep)
+}
+
+private fun buildPolyPathWaypoints(
+    config: BoardConfig,
+    oldPos: Int, oldIsHome: Boolean,
+    newPos: Int, newIsHome: Boolean
+): List<Pair<Int, Boolean>> {
+    if (oldIsHome) return listOf(newPos to newIsHome)
+    if (newPos == -1) return listOf(-1 to false)
+    if (oldPos == -1) return listOf(newPos to newIsHome)
+    if (newPos <= oldPos) return listOf(newPos to newIsHome)
+
+    val endPos = if (newIsHome) config.homePosition else newPos
+    return ((oldPos + 1)..endPos.coerceAtMost(config.homePosition)).map { it to (it == config.homePosition && newIsHome) }
+        .ifEmpty { listOf(newPos to newIsHome) }
 }
 
 private fun handlePolygonTokenTap(

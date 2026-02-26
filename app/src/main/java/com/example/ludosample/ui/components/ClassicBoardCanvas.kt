@@ -1,47 +1,71 @@
 package com.example.ludosample.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector2D
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.TwoWayConverter
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Path
 import com.example.ludosample.engine.BoardConfig
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.engine.Token
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+
+private val OffsetToVector: TwoWayConverter<Offset, AnimationVector2D> =
+    TwoWayConverter(
+        convertToVector = { AnimationVector2D(it.x, it.y) },
+        convertFromVector = { Offset(it.v1, it.v2) }
+    )
 
 private const val GRID_SIZE = 15
 
-private val QUADRANT_COLORS = mapOf(
-    0 to Color(0xFFE53935),
-    1 to Color(0xFF43A047),
-    2 to Color(0xFFFFB300),
-    3 to Color(0xFF1E88E5)
-)
-
-private val TOKEN_COLORS = mapOf(
-    PlayerColor.RED to Color(0xFFC62828),
-    PlayerColor.GREEN to Color(0xFF2E7D32),
-    PlayerColor.YELLOW to Color(0xFFF9A825),
-    PlayerColor.BLUE to Color(0xFF1565C0),
+private val PLAYER_COLORS = mapOf(
+    PlayerColor.RED to Color(0xFFE53935),
+    PlayerColor.GREEN to Color(0xFF43A047),
+    PlayerColor.YELLOW to Color(0xFFFDD835),
+    PlayerColor.BLUE to Color(0xFF1E88E5),
     PlayerColor.ORANGE to Color(0xFFEF6C00),
     PlayerColor.PURPLE to Color(0xFF6A1B9A)
+)
+
+private val QUADRANT_COLORS = mapOf(
+    0 to PLAYER_COLORS[PlayerColor.RED]!!,
+    1 to PLAYER_COLORS[PlayerColor.GREEN]!!,
+    2 to PLAYER_COLORS[PlayerColor.YELLOW]!!,
+    3 to PLAYER_COLORS[PlayerColor.BLUE]!!
 )
 
 /**
@@ -124,42 +148,77 @@ private val HOME_COLUMN_COORDS: List<List<Pair<Int, Int>>> = listOf(
     listOf(13 to 7, 12 to 7, 11 to 7, 10 to 7, 9 to 7)
 )
 
-/** Yard token positions (row, col) for each slot – 4 positions inside each corner quadrant. */
-private val YARD_COORDS: List<List<Pair<Int, Int>>> = listOf(
-    // Slot 0 (Red) – top-left quadrant
-    listOf(2 to 2, 2 to 4, 4 to 2, 4 to 4),
-    // Slot 1 (Green) – top-right quadrant
-    listOf(2 to 10, 2 to 12, 4 to 10, 4 to 12),
-    // Slot 2 (Yellow) – bottom-right quadrant
-    listOf(10 to 10, 10 to 12, 12 to 10, 12 to 12),
-    // Slot 3 (Blue) – bottom-left quadrant
-    listOf(10 to 2, 10 to 4, 12 to 2, 12 to 4)
+/** Quadrant centers as cell-center indices (midpoint of each 6-cell span). */
+private val QUADRANT_CENTERS: List<Pair<Float, Float>> = listOf(
+    2.5f to 2.5f,    // Slot 0 (Red) – top-left
+    2.5f to 11.5f,   // Slot 1 (Green) – top-right
+    11.5f to 11.5f,  // Slot 2 (Yellow) – bottom-right
+    11.5f to 2.5f    // Slot 3 (Blue) – bottom-left
 )
 
-class ClassicBoardLayout(private val boardSize: Float) : BoardLayout {
+/** Centroids of the 4 physical triangles in the center 3x3 home area (row, col). */
+private val PHYS_TRIANGLE_CENTERS: List<Pair<Float, Float>> = listOf(
+    7.5f to 6.5f,  // Physical left
+    6.5f to 7.5f,  // Physical top
+    7.5f to 8.5f,  // Physical right
+    8.5f to 7.5f   // Physical bottom
+)
+
+class ClassicBoardLayout(private val boardSize: Float, val rotation: Int = 0) : BoardLayout {
     private val cell = boardSize / GRID_SIZE
+
+    private fun rotateGrid(row: Float, col: Float): Pair<Float, Float> {
+        val max = GRID_SIZE - 1f
+        return when (rotation % 4) {
+            1 -> col to (max - row)
+            2 -> (max - row) to (max - col)
+            3 -> (max - col) to row
+            else -> row to col
+        }
+    }
+
+    fun slotAtPhysicalPosition(physPos: Int): Int = (physPos - rotation + 4) % 4
+
+    fun yardCenterOffset(slotIndex: Int): Offset {
+        val (centerRow, centerCol) = QUADRANT_CENTERS[slotIndex.coerceIn(0, 3)]
+        val (rRow, rCol) = rotateGrid(centerRow, centerCol)
+        return Offset(rCol * cell + cell / 2, rRow * cell + cell / 2)
+    }
 
     override fun pathCellOffset(absoluteIndex: Int): Offset {
         val (row, col) = PATH_COORDS[absoluteIndex % PATH_COORDS.size]
-        return Offset(col * cell + cell / 2, row * cell + cell / 2)
+        val (rRow, rCol) = rotateGrid(row.toFloat(), col.toFloat())
+        return Offset(rCol * cell + cell / 2, rRow * cell + cell / 2)
     }
 
     override fun homeCellOffset(slotIndex: Int, homeStep: Int): Offset {
         val coords = HOME_COLUMN_COORDS[slotIndex]
         val (row, col) = coords[homeStep.coerceIn(0, coords.lastIndex)]
-        return Offset(col * cell + cell / 2, row * cell + cell / 2)
+        val (rRow, rCol) = rotateGrid(row.toFloat(), col.toFloat())
+        return Offset(rCol * cell + cell / 2, rRow * cell + cell / 2)
     }
 
     override fun yardTokenOffset(slotIndex: Int, tokenIndex: Int): Offset {
-        val coords = YARD_COORDS[slotIndex]
-        val (row, col) = coords[tokenIndex.coerceIn(0, coords.lastIndex)]
-        return Offset(col * cell + cell / 2, row * cell + cell / 2)
+        val (centerRow, centerCol) = QUADRANT_CENTERS[slotIndex.coerceIn(0, 3)]
+        val (rRow, rCol) = rotateGrid(centerRow, centerCol)
+        val cx = rCol * cell + cell / 2
+        val cy = rRow * cell + cell / 2
+        val spacing = cell * 1.4f
+        val dx = if (tokenIndex % 2 == 0) -spacing / 2 else spacing / 2
+        val dy = if (tokenIndex < 2) -spacing / 2 else spacing / 2
+        return Offset(cx + dx, cy + dy)
     }
 
-    override fun centerOffset(): Offset {
-        val center = boardSize / 2
-        return Offset(center, center)
+    fun homeTriangleCenterOffset(slotIndex: Int, tokenIndex: Int): Offset {
+        val physTriangle = (slotIndex + rotation) % 4
+        val (row, col) = PHYS_TRIANGLE_CENTERS[physTriangle]
+        val d = cell * 0.18f
+        val dx = if (tokenIndex % 2 == 0) -d else d
+        val dy = if (tokenIndex < 2) -d else d
+        return Offset(col * cell + dx, row * cell + dy)
     }
+
+    override fun centerOffset(): Offset = Offset(boardSize / 2, boardSize / 2)
 
     override fun cellSize(): Float = cell
 }
@@ -174,14 +233,73 @@ fun ClassicBoardCanvas(
 ) {
     val config = BoardConfig.Classic
     val textMeasurer = rememberTextMeasurer()
+    val mySlot = gameState.players[currentPlayerId]?.slotIndex ?: 3
+    val boardRotation = (3 - mySlot + 4) % 4
+
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+
+    var boardSize by remember { mutableFloatStateOf(0f) }
+    val animatedOffsets = remember {
+        mutableStateMapOf<String, Animatable<Offset, AnimationVector2D>>()
+    }
+    val prevPositions = remember { mutableStateMapOf<String, Pair<Int, Boolean>>() }
+    val tokenTrails = remember { mutableStateMapOf<String, List<Offset>>() }
+
+    if (boardSize > 0f) {
+        val layout = ClassicBoardLayout(boardSize, boardRotation)
+        for ((playerId, player) in gameState.players) {
+            if (player.isEliminated) continue
+            player.tokens.forEachIndexed { index, token ->
+                val key = "${playerId}_$index"
+                val target = tokenOffset(config, token, player.slotIndex, index, layout)
+                val anim = animatedOffsets.getOrPut(key) {
+                    Animatable(target, OffsetToVector)
+                }
+                val slotIndex = player.slotIndex
+                LaunchedEffect(key, token.position, token.isHome, boardSize, boardRotation) {
+                    val prev = prevPositions[key]
+                    if (prev == null || (prev.first == token.position && prev.second == token.isHome)) {
+                        anim.snapTo(target)
+                        tokenTrails.remove(key)
+                    } else {
+                        val trail = mutableListOf(anim.value)
+                        tokenTrails[key] = trail.toList()
+                        val waypoints = buildPathWaypoints(
+                            config, prev.first, prev.second,
+                            token.position, token.isHome
+                        )
+                        for ((pos, isHome) in waypoints) {
+                            val wp = tokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
+                            anim.animateTo(wp, animationSpec = tween(120))
+                            trail.add(wp)
+                            tokenTrails[key] = trail.toList()
+                        }
+                        kotlinx.coroutines.delay(350)
+                        tokenTrails.remove(key)
+                    }
+                    prevPositions[key] = token.position to token.isHome
+                }
+            }
+        }
+    }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .pointerInput(gameState, validMoves) {
+            .onSizeChanged { boardSize = it.width.toFloat() }
+            .pointerInput(gameState, validMoves, boardRotation) {
                 detectTapGestures { tapOffset ->
-                    val layout = ClassicBoardLayout(size.width.toFloat())
+                    val layout = ClassicBoardLayout(size.width.toFloat(), boardRotation)
                     handleTokenTap(
                         config, gameState, currentPlayerId, validMoves,
                         layout, tapOffset, onTokenTapped
@@ -189,29 +307,30 @@ fun ClassicBoardCanvas(
                 }
             }
     ) {
-        val boardSize = size.width
-        val layout = ClassicBoardLayout(boardSize)
+        val layout = ClassicBoardLayout(size.width, boardRotation)
         val cell = layout.cellSize()
 
-        drawBoard(cell)
+        drawBoard(layout, cell)
         drawPath(layout, cell, config)
         drawHomeColumns(layout, cell)
-        drawCenter(cell)
-        drawAllTokens(config, gameState, layout, cell, currentPlayerId, validMoves, textMeasurer)
+        drawCenter(layout, cell)
+        drawTokenTrails(tokenTrails, gameState, cell)
+        drawAllTokensAnimated(
+            config, gameState, layout, cell, currentPlayerId, validMoves,
+            textMeasurer, animatedOffsets, pulseScale
+        )
     }
 }
 
-private fun DrawScope.drawBoard(cell: Float) {
-    // Background
+private fun DrawScope.drawBoard(layout: ClassicBoardLayout, cell: Float) {
     drawRect(Color.White, size = size)
 
-    // Quadrant backgrounds
     val quadrantSize = cell * 6
     val quadrants = listOf(
-        Offset(0f, 0f) to 0,
-        Offset(cell * 9, 0f) to 1,
-        Offset(cell * 9, cell * 9) to 2,
-        Offset(0f, cell * 9) to 3
+        Offset(0f, 0f) to layout.slotAtPhysicalPosition(0),
+        Offset(cell * 9, 0f) to layout.slotAtPhysicalPosition(1),
+        Offset(cell * 9, cell * 9) to layout.slotAtPhysicalPosition(2),
+        Offset(0f, cell * 9) to layout.slotAtPhysicalPosition(3)
     )
     for ((offset, slot) in quadrants) {
         drawRoundRect(
@@ -220,7 +339,6 @@ private fun DrawScope.drawBoard(cell: Float) {
             size = Size(quadrantSize, quadrantSize),
             cornerRadius = CornerRadius(cell * 0.3f)
         )
-        // Yard border
         val inset = cell * 0.8f
         drawRoundRect(
             color = QUADRANT_COLORS[slot]!!,
@@ -231,13 +349,10 @@ private fun DrawScope.drawBoard(cell: Float) {
         )
     }
 
-    // Grid lines for the cross path area
     val gridColor = Color.Gray.copy(alpha = 0.3f)
     val strokeWidth = 1f
     for (i in 0..GRID_SIZE) {
         val pos = i * cell
-        // Only draw in the cross area (columns 6-8, rows 6-8)
-        // Vertical lines in middle rows
         if (i in 6..9) {
             drawLine(gridColor, Offset(pos, 0f), Offset(pos, size.height), strokeWidth)
         }
@@ -260,7 +375,7 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
 
         val fillColor = when {
             isStart -> QUADRANT_COLORS[slotForCell]!!.copy(alpha = 0.6f)
-            isSafe -> Color(0xFFE0E0E0)
+            isSafe -> Color(0xFFF5F5F5)
             else -> Color.White
         }
 
@@ -278,13 +393,10 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
             style = Stroke(width = 1f)
         )
 
-        if (isSafe && !isStart) {
-            drawCircle(
-                color = Color.Gray.copy(alpha = 0.4f),
-                radius = cell * 0.12f,
-                center = offset,
-                style = Stroke(width = 1.5f)
-            )
+        if (isStart) {
+            drawStar(offset, cell * 0.2f, Color.White.copy(alpha = 0.8f))
+        } else if (isSafe) {
+            drawStar(offset, cell * 0.25f, Color(0xFFBDBDBD))
         }
     }
 }
@@ -313,87 +425,190 @@ private fun DrawScope.drawHomeColumns(layout: ClassicBoardLayout, cell: Float) {
     }
 }
 
-private fun DrawScope.drawCenter(cell: Float) {
-    val center = Offset(size.width / 2, size.height / 2)
-    val triangleRadius = cell * 1.2f
+private fun DrawScope.drawCenter(layout: ClassicBoardLayout, cell: Float) {
+    val left = cell * 6
+    val top = cell * 6
+    val right = cell * 9
+    val bottom = cell * 9
+    val cx = (left + right) / 2
+    val cy = (top + bottom) / 2
 
-    for (slot in 0 until 4) {
+    drawRect(Color.White, topLeft = Offset(left, top), size = Size(right - left, bottom - top))
+
+    val triangleData = listOf(
+        layout.slotAtPhysicalPosition(0) to listOf(Offset(left, top), Offset(left, bottom), Offset(cx, cy)),
+        layout.slotAtPhysicalPosition(1) to listOf(Offset(left, top), Offset(right, top), Offset(cx, cy)),
+        layout.slotAtPhysicalPosition(2) to listOf(Offset(right, top), Offset(right, bottom), Offset(cx, cy)),
+        layout.slotAtPhysicalPosition(3) to listOf(Offset(left, bottom), Offset(right, bottom), Offset(cx, cy))
+    )
+
+    for ((slot, vertices) in triangleData) {
         val color = QUADRANT_COLORS[slot]!!
-        val angle1 = Math.toRadians((slot * 90 + 45).toDouble())
-        val angle2 = Math.toRadians((slot * 90 + 135).toDouble())
-
         val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(center.x, center.y)
-            lineTo(
-                center.x + (triangleRadius * kotlin.math.cos(angle1)).toFloat(),
-                center.y + (triangleRadius * kotlin.math.sin(angle1)).toFloat()
-            )
-            lineTo(
-                center.x + (triangleRadius * kotlin.math.cos(angle2)).toFloat(),
-                center.y + (triangleRadius * kotlin.math.sin(angle2)).toFloat()
-            )
+            moveTo(vertices[0].x, vertices[0].y)
+            lineTo(vertices[1].x, vertices[1].y)
+            lineTo(vertices[2].x, vertices[2].y)
             close()
         }
-        drawPath(path, color = color.copy(alpha = 0.7f))
-        drawPath(path, color = Color.White, style = Stroke(width = 1.5f))
+        drawPath(path, color = color.copy(alpha = 0.85f))
+        drawPath(path, color = Color.White, style = Stroke(width = 2f))
     }
 }
 
-private fun DrawScope.drawAllTokens(
+private fun DrawScope.drawStar(center: Offset, outerRadius: Float, color: Color) {
+    val path = Path()
+    val innerRadius = outerRadius * 0.45f
+    for (i in 0 until 10) {
+        val r = if (i % 2 == 0) outerRadius else innerRadius
+        val angle = -PI / 2 + i * PI / 5
+        val x = center.x + (r * cos(angle)).toFloat()
+        val y = center.y + (r * sin(angle)).toFloat()
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    drawPath(path, color)
+}
+
+private fun DrawScope.drawTokenTrails(
+    trails: Map<String, List<Offset>>,
+    gameState: GameState,
+    cell: Float
+) {
+    for ((key, trail) in trails) {
+        val playerId = key.substringBefore("_")
+        val player = gameState.players[playerId] ?: continue
+        val color = PLAYER_COLORS[player.color] ?: Color.Gray
+        val trailSize = trail.size
+        trail.forEachIndexed { i, point ->
+            val alpha = (i + 1).toFloat() / (trailSize + 1) * 0.35f
+            drawCircle(
+                color = color.copy(alpha = alpha),
+                radius = cell * 0.18f,
+                center = point
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawAllTokensAnimated(
     config: BoardConfig,
     gameState: GameState,
     layout: ClassicBoardLayout,
     cell: Float,
     currentPlayerId: String,
     validMoves: List<Int>,
-    textMeasurer: TextMeasurer
+    textMeasurer: TextMeasurer,
+    animatedOffsets: Map<String, Animatable<Offset, AnimationVector2D>>,
+    pulseScale: Float
 ) {
     val tokenRadius = cell * 0.32f
+    val homeTokenRadius = cell * 0.25f
     val isMyTurn = gameState.currentTurnPlayerId == currentPlayerId
+
+    // Pre-compute stacking groups for tokens sharing the same cell
+    val positionGroups = mutableMapOf<String, MutableList<Pair<String, Int>>>()
+    for ((playerId, player) in gameState.players) {
+        if (player.isEliminated) continue
+        player.tokens.forEachIndexed { index, token ->
+            if (token.position == -1 || token.isHome) return@forEachIndexed
+            val posKey = if (token.position < config.pathLength) {
+                "p${config.toAbsolutePosition(token.position, player.slotIndex)}"
+            } else {
+                "h${player.slotIndex}_${token.position - config.pathLength}"
+            }
+            positionGroups.getOrPut(posKey) { mutableListOf() }.add(playerId to index)
+        }
+    }
 
     for ((playerId, player) in gameState.players) {
         if (player.isEliminated) continue
-        val color = TOKEN_COLORS[player.color] ?: Color.Gray
+        val color = PLAYER_COLORS[player.color] ?: Color.Gray
 
         player.tokens.forEachIndexed { index, token ->
-            if (token.isHome) return@forEachIndexed
+            val key = "${playerId}_$index"
+            val baseOffset = animatedOffsets[key]?.value
+                ?: tokenOffset(config, token, player.slotIndex, index, layout)
 
-            val offset = tokenOffset(config, token, player.slotIndex, index, layout)
+            // Compute stacking nudge for path/home-column tokens
+            val nudge = if (token.position >= 0 && !token.isHome) {
+                val posKey = if (token.position < config.pathLength) {
+                    "p${config.toAbsolutePosition(token.position, player.slotIndex)}"
+                } else {
+                    "h${player.slotIndex}_${token.position - config.pathLength}"
+                }
+                val group = positionGroups[posKey] ?: emptyList()
+                if (group.size > 1) {
+                    val idx = group.indexOfFirst { it.first == playerId && it.second == index }
+                    stackNudge(idx, cell)
+                } else Offset.Zero
+            } else Offset.Zero
+
+            val offset = baseOffset + nudge
+            val radius = if (token.isHome) homeTokenRadius else tokenRadius
 
             val isValid = isMyTurn && playerId == currentPlayerId && index in validMoves
             if (isValid) {
                 drawCircle(
-                    color = Color.White,
-                    radius = tokenRadius + cell * 0.08f,
+                    color = color.copy(alpha = 0.3f),
+                    radius = (radius + cell * 0.14f) * pulseScale,
                     center = offset
                 )
                 drawCircle(
-                    color = color.copy(alpha = 0.4f),
-                    radius = tokenRadius + cell * 0.12f,
+                    color = Color.White,
+                    radius = radius + cell * 0.06f,
                     center = offset
                 )
             }
 
-            drawCircle(color = Color.White, radius = tokenRadius + 2f, center = offset)
-            drawCircle(color = color, radius = tokenRadius, center = offset)
+            drawCircle(color = Color.White, radius = radius + 2f, center = offset)
+            drawCircle(color = color, radius = radius, center = offset)
 
-            val initial = player.name.firstOrNull()?.uppercase() ?: "?"
-            val textResult = textMeasurer.measure(
-                initial,
-                style = TextStyle(
-                    color = Color.White,
-                    fontSize = (tokenRadius * 0.9f).sp,
-                    fontWeight = FontWeight.Bold
+            if (token.isHome) {
+                val checkResult = textMeasurer.measure(
+                    "\u2713",
+                    style = TextStyle(
+                        color = Color.White,
+                        fontSize = (radius * 1.1f).sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 )
-            )
-            drawText(
-                textResult,
-                topLeft = Offset(
-                    offset.x - textResult.size.width / 2,
-                    offset.y - textResult.size.height / 2
+                drawText(
+                    checkResult,
+                    topLeft = Offset(
+                        offset.x - checkResult.size.width / 2,
+                        offset.y - checkResult.size.height / 2
+                    )
                 )
-            )
+            } else {
+                val initial = player.name.firstOrNull()?.uppercase() ?: "?"
+                val textResult = textMeasurer.measure(
+                    initial,
+                    style = TextStyle(
+                        color = Color.White,
+                        fontSize = (radius * 0.9f).sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+                drawText(
+                    textResult,
+                    topLeft = Offset(
+                        offset.x - textResult.size.width / 2,
+                        offset.y - textResult.size.height / 2
+                    )
+                )
+            }
         }
+    }
+}
+
+private fun stackNudge(indexInGroup: Int, cell: Float): Offset {
+    val d = cell * 0.16f
+    return when (indexInGroup % 4) {
+        0 -> Offset(-d, -d)
+        1 -> Offset(d, d)
+        2 -> Offset(d, -d)
+        3 -> Offset(-d, d)
+        else -> Offset.Zero
     }
 }
 
@@ -407,12 +622,30 @@ private fun tokenOffset(
     if (token.position == -1) {
         return layout.yardTokenOffset(slotIndex, tokenIndex)
     }
+    if (token.isHome) {
+        return layout.homeTriangleCenterOffset(slotIndex, tokenIndex)
+    }
     if (token.position < config.pathLength) {
         val absolutePos = config.toAbsolutePosition(token.position, slotIndex)
         return layout.pathCellOffset(absolutePos)
     }
     val homeStep = token.position - config.pathLength
     return layout.homeCellOffset(slotIndex, homeStep)
+}
+
+private fun buildPathWaypoints(
+    config: BoardConfig,
+    oldPos: Int, oldIsHome: Boolean,
+    newPos: Int, newIsHome: Boolean
+): List<Pair<Int, Boolean>> {
+    if (oldIsHome) return listOf(newPos to newIsHome)
+    if (newPos == -1) return listOf(-1 to false)
+    if (oldPos == -1) return listOf(newPos to newIsHome)
+    if (newPos <= oldPos) return listOf(newPos to newIsHome)
+
+    val endPos = if (newIsHome) config.homePosition else newPos
+    return ((oldPos + 1)..endPos.coerceAtMost(config.homePosition)).map { it to (it == config.homePosition && newIsHome) }
+        .ifEmpty { listOf(newPos to newIsHome) }
 }
 
 private fun handleTokenTap(

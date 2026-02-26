@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private const val NO_MOVES_DISPLAY_MS = 1500L
+
 private const val TURN_TIMEOUT_MS = 20_000L
 private const val TIMER_TICK_MS = 1_000L
 
@@ -33,8 +35,12 @@ class GameViewModel : ViewModel() {
     private val _remainingSeconds = MutableStateFlow(20)
     val remainingSeconds: StateFlow<Int> = _remainingSeconds.asStateFlow()
 
+    private val _showingNoMoves = MutableStateFlow(false)
+    val showingNoMoves: StateFlow<Boolean> = _showingNoMoves.asStateFlow()
+
     private var timerJob: Job? = null
     private var listenerJob: Job? = null
+    private var cleanupJob: Job? = null
     private var config: BoardConfig = BoardConfig.Classic
     private var isOnline = false
     private var onlinePlayerId = ""
@@ -66,6 +72,10 @@ class GameViewModel : ViewModel() {
                 } else {
                     timerJob?.cancel()
                 }
+
+                if (state.phase == GamePhase.FINISHED && state.creatorPlayerId == playerId) {
+                    scheduleRoomCleanup(roomCode)
+                }
             }
         }
     }
@@ -78,8 +88,19 @@ class GameViewModel : ViewModel() {
         val diceValue = GameEngine.rollDice()
         val newState = GameEngine.applyDiceRoll(config, state, diceValue)
 
-        viewModelScope.launch {
-            repository.updateGameState(onlineRoomCode, newState)
+        val hasValidMoves = newState.phase == GamePhase.MOVING
+        if (hasValidMoves) {
+            viewModelScope.launch {
+                repository.updateGameState(onlineRoomCode, newState)
+            }
+        } else {
+            _gameState.value = state.copy(diceValue = diceValue)
+            _showingNoMoves.value = true
+            viewModelScope.launch {
+                delay(NO_MOVES_DISPLAY_MS)
+                _showingNoMoves.value = false
+                repository.updateGameState(onlineRoomCode, newState)
+            }
         }
     }
 
@@ -160,19 +181,26 @@ class GameViewModel : ViewModel() {
         }
 
         val state = _gameState.value
-        if (state.phase != GamePhase.ROLLING) return
+        if (state.phase != GamePhase.ROLLING || _showingNoMoves.value) return
 
         val diceValue = GameEngine.rollDice()
         val newState = GameEngine.applyDiceRoll(config, state, diceValue)
-        _gameState.value = newState
 
         if (newState.phase == GamePhase.MOVING) {
+            _gameState.value = newState
             _validMoves.value = GameEngine.getValidMoves(
                 config, newState, newState.currentTurnPlayerId, newState.diceValue!!
             )
         } else {
+            _gameState.value = state.copy(diceValue = diceValue)
             _validMoves.value = emptyList()
-            startTurnTimer()
+            _showingNoMoves.value = true
+            viewModelScope.launch {
+                delay(NO_MOVES_DISPLAY_MS)
+                _showingNoMoves.value = false
+                _gameState.value = newState
+                startTurnTimer()
+            }
         }
     }
 
@@ -235,9 +263,18 @@ class GameViewModel : ViewModel() {
         return state.players[state.currentTurnPlayerId]?.color ?: PlayerColor.RED
     }
 
+    private fun scheduleRoomCleanup(roomCode: String) {
+        if (cleanupJob != null) return
+        cleanupJob = viewModelScope.launch {
+            delay(30_000L)
+            repository.deleteFinishedRoom(roomCode)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
         listenerJob?.cancel()
+        cleanupJob?.cancel()
     }
 }

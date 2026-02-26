@@ -3,6 +3,7 @@ package com.example.ludosample.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ludosample.data.GameRepository
+import com.example.ludosample.engine.BoardConfig
 import com.example.ludosample.engine.BoardType
 import com.example.ludosample.engine.GameEngine
 import com.example.ludosample.engine.GamePhase
@@ -84,14 +85,26 @@ class LobbyViewModel : ViewModel() {
     fun startGame() {
         if (roomCode.isBlank()) return
         val currentState = _gameState.value
-        if (currentState.players.size < 2) return
+        val actualCount = currentState.players.size
+        if (actualCount < 2) return
 
         viewModelScope.launch {
             try {
+                val actualBoardType = BoardType.forPlayerCount(actualCount)
+                val actualConfig = BoardConfig.forBoardType(actualBoardType)
+                val properSlots = actualConfig.assignSlots(actualCount)
+
+                val sortedPlayers = currentState.players.values.sortedBy { it.slotIndex }
+                val reassignedPlayers = sortedPlayers.mapIndexed { i, player ->
+                    val newSlot = properSlots[i]
+                    val newColor = actualConfig.colorForSlot(newSlot)
+                    player.id to player.copy(slotIndex = newSlot, color = newColor)
+                }.toMap()
+
                 val initialState = GameEngine.createInitialGameState(
                     roomCode = roomCode,
-                    boardType = currentState.boardType,
-                    players = currentState.players,
+                    boardType = actualBoardType,
+                    players = reassignedPlayers,
                     creatorPlayerId = currentState.creatorPlayerId
                 )
                 repository.startGame(roomCode, initialState)

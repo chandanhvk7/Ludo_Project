@@ -2,6 +2,8 @@ package com.example.ludosample.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -16,13 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
+import kotlin.random.Random
+import kotlinx.coroutines.launch
 
 @Composable
 fun Dice(
@@ -34,21 +38,65 @@ fun Dice(
 ) {
     var isRolling by remember { mutableStateOf(false) }
     var displayValue by remember { mutableIntStateOf(value ?: 0) }
-    val rotation = remember { Animatable(0f) }
+    val animRotZ = remember { Animatable(0f) }
+    val animRotX = remember { Animatable(0f) }
+    val animScale = remember { Animatable(1f) }
+    val animShakeX = remember { Animatable(0f) }
+    val animShakeY = remember { Animatable(0f) }
 
     LaunchedEffect(value) {
         if (value != null && value in 1..6) {
             isRolling = true
-            repeat(8) {
+            launch { animScale.animateTo(1.18f, tween(100)) }
+
+            repeat(8) { i ->
                 displayValue = (1..6).random()
-                rotation.animateTo(
-                    rotation.value + 45f,
-                    animationSpec = tween(50, easing = LinearEasing)
+                val speed = 30 + i * 8
+                launch {
+                    animRotX.animateTo(
+                        animRotX.value + 180f,
+                        tween(speed, easing = LinearEasing)
+                    )
+                }
+                launch {
+                    animShakeX.animateTo(
+                        (Random.nextFloat() - 0.5f) * 6f,
+                        tween(speed / 2)
+                    )
+                }
+                launch {
+                    animShakeY.animateTo(
+                        (Random.nextFloat() - 0.5f) * 6f,
+                        tween(speed / 2)
+                    )
+                }
+                animRotZ.animateTo(
+                    animRotZ.value + 45f,
+                    tween(speed, easing = LinearEasing)
                 )
-                delay(30)
             }
+
             displayValue = value
-            rotation.animateTo(0f, animationSpec = tween(100))
+
+            launch { animShakeX.animateTo(0f, tween(80)) }
+            launch { animShakeY.animateTo(0f, tween(80)) }
+            launch { animRotX.animateTo(0f, tween(150)) }
+            launch {
+                animRotZ.animateTo(
+                    0f,
+                    spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                )
+            }
+            animScale.animateTo(
+                1f,
+                spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = 250f
+                )
+            )
             isRolling = false
         }
     }
@@ -64,9 +112,13 @@ fun Dice(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                rotationZ = rotation.value
-                scaleX = if (isRolling) 1.1f else 1f
-                scaleY = if (isRolling) 1.1f else 1f
+                rotationZ = animRotZ.value
+                rotationX = animRotX.value
+                scaleX = animScale.value
+                scaleY = animScale.value
+                translationX = animShakeX.value
+                translationY = animShakeY.value
+                cameraDistance = 12f * density
             }
             .then(if (enabled && !isRolling) Modifier.clickable { onClick() } else Modifier)
     ) {
@@ -74,14 +126,23 @@ fun Dice(
         val cornerR = s * 0.15f
         val dotRadius = s * 0.07f
 
+        if (isRolling) {
+            drawRoundRect(
+                color = Color(0x33FFD54F),
+                cornerRadius = CornerRadius(cornerR * 1.2f),
+                topLeft = Offset(-s * 0.04f, -s * 0.04f),
+                size = Size(s * 1.08f, s * 1.08f)
+            )
+        }
+
         drawRoundRect(
             color = bgColor,
-            cornerRadius = CornerRadius(cornerR, cornerR),
+            cornerRadius = CornerRadius(cornerR),
             size = this.size
         )
         drawRoundRect(
             color = Color(0xFF424242),
-            cornerRadius = CornerRadius(cornerR, cornerR),
+            cornerRadius = CornerRadius(cornerR),
             size = this.size,
             style = Stroke(width = s * 0.04f)
         )

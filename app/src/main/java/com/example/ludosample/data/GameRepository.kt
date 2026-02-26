@@ -15,10 +15,16 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 class GameRepository {
 
-    private val db = FirebaseDatabase.getInstance()
+    companion object {
+        private const val STALE_ROOM_MS = 2 * 60 * 60 * 1000L // 2 hours
+    }
+
+    private val db = FirebaseDatabase.getInstance("https://ludo-sample-f1ce3-default-rtdb.asia-southeast1.firebasedatabase.app")
     private val gamesRef = db.getReference("games")
 
     /**
@@ -40,6 +46,8 @@ class GameRepository {
         val roomCode = generateRoomCode()
         val boardType = BoardType.forPlayerCount(maxPlayers)
 
+        cleanupStaleRooms()
+
         val initialData = mapOf(
             "roomCode" to roomCode,
             "boardType" to boardType.name,
@@ -47,6 +55,7 @@ class GameRepository {
             "phase" to GamePhase.WAITING_FOR_PLAYERS.name,
             "creatorPlayerId" to playerId,
             "consecutiveSixes" to 0,
+            "createdAt" to ServerValue.TIMESTAMP,
             "turnStartedAt" to ServerValue.TIMESTAMP,
             "finishOrder" to emptyList<String>(),
             "players" to mapOf(
@@ -63,7 +72,13 @@ class GameRepository {
             )
         )
 
-        gamesRef.child(roomCode).setValue(initialData).await()
+        try {
+            withTimeout(10_000L) {
+                gamesRef.child(roomCode).setValue(initialData).await()
+            }
+        } catch (e: TimeoutCancellationException) {
+            throw Exception("Firebase write timed out. Ensure Realtime Database is created in Firebase Console and security rules allow writes.")
+        }
         return roomCode
     }
 
@@ -227,6 +242,22 @@ class GameRepository {
             "consecutiveSixes" to state.consecutiveSixes,
             "creatorPlayerId" to state.creatorPlayerId
         )
+    }
+
+    suspend fun deleteFinishedRoom(roomCode: String) {
+        try {
+            gamesRef.child(roomCode).removeValue().await()
+        } catch (_: Exception) { }
+    }
+
+    private suspend fun cleanupStaleRooms() {
+        try {
+            val cutoff = System.currentTimeMillis() - STALE_ROOM_MS
+            val snapshot = gamesRef.orderByChild("createdAt").endAt(cutoff.toDouble()).get().await()
+            for (child in snapshot.children) {
+                child.ref.removeValue()
+            }
+        } catch (_: Exception) { }
     }
 
     private fun generateRoomCode(): String {
