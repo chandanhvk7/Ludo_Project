@@ -42,6 +42,18 @@ class GameRepository {
         awaitClose { ref.removeEventListener(listener) }
     }
 
+    fun observeConnected(): Flow<Boolean> = callbackFlow {
+        val ref = db.getReference(".info/connected")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                trySend(snapshot.getValue(Boolean::class.java) ?: false)
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
     suspend fun createRoom(playerId: String, playerName: String, maxPlayers: Int): String {
         val roomCode = generateRoomCode()
         val boardType = BoardType.forPlayerCount(maxPlayers)
@@ -69,6 +81,7 @@ class GameRepository {
                     "isEliminated" to false,
                     "kills" to 0,
                     "deaths" to 0,
+                    "disconnectedAt" to 0,
                     "tokens" to List(4) { mapOf("position" to -1, "isHome" to false) }
                 )
             )
@@ -118,6 +131,7 @@ class GameRepository {
             "isEliminated" to false,
             "kills" to 0,
             "deaths" to 0,
+            "disconnectedAt" to 0,
             "tokens" to List(4) { mapOf("position" to -1, "isHome" to false) }
         )
 
@@ -157,16 +171,30 @@ class GameRepository {
 
     fun setupOnDisconnect(roomCode: String, playerId: String) {
         val playerRef = gamesRef.child(roomCode).child("players").child(playerId)
-        playerRef.child("isEliminated").onDisconnect().setValue(true)
-        playerRef.child("tokens").onDisconnect().setValue(
-            List(4) { mapOf("position" to -1, "isHome" to false) }
-        )
+        playerRef.child("disconnectedAt").onDisconnect().setValue(ServerValue.TIMESTAMP)
     }
 
     fun cancelOnDisconnect(roomCode: String, playerId: String) {
         val playerRef = gamesRef.child(roomCode).child("players").child(playerId)
-        playerRef.child("isEliminated").onDisconnect().cancel()
-        playerRef.child("tokens").onDisconnect().cancel()
+        playerRef.child("disconnectedAt").onDisconnect().cancel()
+    }
+
+    suspend fun clearDisconnected(roomCode: String, playerId: String) {
+        try {
+            gamesRef.child(roomCode).child("players").child(playerId)
+                .child("disconnectedAt").setValue(0).await()
+        } catch (_: Exception) { }
+    }
+
+    suspend fun eliminatePlayer(roomCode: String, playerId: String) {
+        try {
+            val playerRef = gamesRef.child(roomCode).child("players").child(playerId)
+            playerRef.child("isEliminated").setValue(true).await()
+            playerRef.child("disconnectedAt").setValue(0).await()
+            playerRef.child("tokens").setValue(
+                List(4) { mapOf("position" to -1, "isHome" to false) }
+            ).await()
+        } catch (_: Exception) { }
     }
 
     // ── Serialization helpers ───────────────────────────────────────
@@ -229,7 +257,8 @@ class GameRepository {
             consecutiveTimeouts = snapshot.child("consecutiveTimeouts").getValue(Int::class.java) ?: 0,
             isEliminated = snapshot.child("isEliminated").getValue(Boolean::class.java) ?: false,
             kills = snapshot.child("kills").getValue(Int::class.java) ?: 0,
-            deaths = snapshot.child("deaths").getValue(Int::class.java) ?: 0
+            deaths = snapshot.child("deaths").getValue(Int::class.java) ?: 0,
+            disconnectedAt = snapshot.child("disconnectedAt").getValue(Long::class.java) ?: 0
         )
     }
 
@@ -247,7 +276,8 @@ class GameRepository {
                 "consecutiveTimeouts" to player.consecutiveTimeouts,
                 "isEliminated" to player.isEliminated,
                 "kills" to player.kills,
-                "deaths" to player.deaths
+                "deaths" to player.deaths,
+                "disconnectedAt" to player.disconnectedAt
             )
         }
 
@@ -281,6 +311,21 @@ class GameRepository {
             snap.getValue(String::class.java)?.takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    suspend fun isPlayerInActiveGame(roomCode: String, playerId: String): Boolean {
+        return try {
+            val snap = gamesRef.child(roomCode).get().await()
+            if (!snap.exists()) return false
+            val phase = snap.child("phase").getValue(String::class.java) ?: return false
+            if (phase == GamePhase.FINISHED.name) return false
+            val playerSnap = snap.child("players").child(playerId)
+            if (!playerSnap.exists()) return false
+            val isEliminated = playerSnap.child("isEliminated").getValue(Boolean::class.java) ?: false
+            !isEliminated
+        } catch (_: Exception) {
+            false
         }
     }
 

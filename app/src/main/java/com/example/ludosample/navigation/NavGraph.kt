@@ -4,11 +4,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.ludosample.data.GameRepository
+import com.example.ludosample.data.PlayerPreferences
 import com.example.ludosample.engine.GamePhase
 import com.example.ludosample.ui.screens.GameOverScreen
 import com.example.ludosample.ui.screens.GameScreen
@@ -33,8 +40,28 @@ fun LudoNavGraph(
     navController: NavHostController,
     playerId: String,
     playerName: String,
+    prefs: PlayerPreferences,
+    activeRoom: String? = null,
     modifier: Modifier = Modifier
 ) {
+    var rejoinHandled by remember { mutableStateOf(false) }
+
+    LaunchedEffect(activeRoom) {
+        if (rejoinHandled || activeRoom.isNullOrBlank()) {
+            rejoinHandled = true
+            return@LaunchedEffect
+        }
+        rejoinHandled = true
+        val repo = GameRepository()
+        if (repo.isPlayerInActiveGame(activeRoom, playerId)) {
+            navController.navigate(Routes.game(activeRoom)) {
+                popUpTo(Routes.HOME)
+            }
+        } else {
+            prefs.setActiveRoom(null)
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Routes.HOME,
@@ -78,6 +105,7 @@ fun LudoNavGraph(
 
             if (gameState.phase == GamePhase.ROLLING || gameState.phase == GamePhase.MOVING) {
                 LaunchedEffect(gameState.roomCode) {
+                    prefs.setActiveRoom(gameState.roomCode)
                     navController.navigate(Routes.game(gameState.roomCode)) {
                         popUpTo(Routes.HOME)
                     }
@@ -102,20 +130,31 @@ fun LudoNavGraph(
         composable(Routes.GAME) { backStackEntry ->
             val roomCode = backStackEntry.arguments?.getString("roomCode") ?: return@composable
             val gameViewModel: GameViewModel = viewModel()
+            val scope = rememberCoroutineScope()
 
             LaunchedEffect(roomCode) {
+                prefs.setActiveRoom(roomCode)
                 gameViewModel.connectToOnlineGame(roomCode, playerId)
+            }
+
+            val gamePhase = gameViewModel.gameState.collectAsState().value.phase
+            LaunchedEffect(gamePhase) {
+                if (gamePhase == GamePhase.FINISHED) {
+                    prefs.setActiveRoom(null)
+                }
             }
 
             GameScreen(
                 viewModel = gameViewModel,
                 currentPlayerId = playerId,
                 onQuit = {
+                    scope.launch { prefs.setActiveRoom(null) }
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
                 },
                 onPlayAgainNavigate = { newRoomCode ->
+                    scope.launch { prefs.setActiveRoom(null) }
                     navController.navigate(Routes.lobby("JOIN:$newRoomCode:$playerName")) {
                         popUpTo(Routes.HOME)
                     }

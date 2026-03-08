@@ -22,6 +22,8 @@ private const val AUTOPLAY_DELAY_MS = 600L
 
 private const val TURN_TIMEOUT_MS = 30_000L
 private const val TIMER_TICK_MS = 1_000L
+private const val DISCONNECT_GRACE_MS = 60_000L
+private const val DISCONNECT_CHECK_INTERVAL_MS = 5_000L
 
 class GameViewModel : ViewModel() {
 
@@ -49,6 +51,8 @@ class GameViewModel : ViewModel() {
     private var listenerJob: Job? = null
     private var cleanupJob: Job? = null
     private var autoPlayJob: Job? = null
+    private var disconnectMonitorJob: Job? = null
+    private var connectionJob: Job? = null
     private var config: BoardConfig = BoardConfig.Classic
     private var isOnline = false
     private var onlinePlayerId = ""
@@ -65,9 +69,8 @@ class GameViewModel : ViewModel() {
         onlinePlayerId = playerId
         onlineRoomCode = roomCode
 
-        viewModelScope.launch {
-            repository.setupOnDisconnect(roomCode, playerId)
-        }
+        startConnectionObserver(roomCode, playerId)
+        startDisconnectMonitor()
 
         listenerJob = viewModelScope.launch {
             repository.listenToGame(roomCode).collect { state ->
@@ -103,6 +106,41 @@ class GameViewModel : ViewModel() {
 
                 if (state.phase == GamePhase.FINISHED && state.creatorPlayerId == playerId) {
                     scheduleRoomCleanup(roomCode)
+                }
+            }
+        }
+    }
+
+    private fun startConnectionObserver(roomCode: String, playerId: String) {
+        connectionJob?.cancel()
+        connectionJob = viewModelScope.launch {
+            repository.observeConnected().collect { connected ->
+                if (connected) {
+                    repository.clearDisconnected(roomCode, playerId)
+                    repository.setupOnDisconnect(roomCode, playerId)
+                }
+            }
+        }
+    }
+
+    private fun startDisconnectMonitor() {
+        disconnectMonitorJob?.cancel()
+        disconnectMonitorJob = viewModelScope.launch {
+            while (true) {
+                delay(DISCONNECT_CHECK_INTERVAL_MS)
+                val state = _gameState.value
+                if (state.phase == GamePhase.FINISHED || state.phase == GamePhase.WAITING_FOR_PLAYERS) continue
+                if (state.creatorPlayerId != onlinePlayerId) continue
+
+                val now = System.currentTimeMillis()
+                for ((pid, player) in state.players) {
+                    if (player.isEliminated || player.isFinished) continue
+                    if (player.disconnectedAt <= 0) continue
+                    if (now - player.disconnectedAt >= DISCONNECT_GRACE_MS) {
+                        repository.eliminatePlayer(onlineRoomCode, pid)
+                        val updated = GameEngine.eliminatePlayer(_gameState.value, pid)
+                        repository.updateGameState(onlineRoomCode, updated)
+                    }
                 }
             }
         }
@@ -367,5 +405,7 @@ class GameViewModel : ViewModel() {
         listenerJob?.cancel()
         cleanupJob?.cancel()
         autoPlayJob?.cancel()
+        disconnectMonitorJob?.cancel()
+        connectionJob?.cancel()
     }
 }

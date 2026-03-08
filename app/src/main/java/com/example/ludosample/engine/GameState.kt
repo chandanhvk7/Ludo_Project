@@ -43,7 +43,8 @@ data class Player(
     val consecutiveTimeouts: Int = 0,
     val isEliminated: Boolean = false,
     val kills: Int = 0,
-    val deaths: Int = 0
+    val deaths: Int = 0,
+    val disconnectedAt: Long = 0
 )
 
 data class GameState(

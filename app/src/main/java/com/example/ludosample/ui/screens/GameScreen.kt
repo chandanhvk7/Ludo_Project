@@ -2,8 +2,11 @@ package com.example.ludosample.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -566,6 +569,25 @@ private fun PlayerProfileCard(
                 fontSize = 12.sp,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium
             )
+            if (player.disconnectedAt > 0 && !player.isEliminated && !player.isFinished) {
+                val infiniteTransition = rememberInfiniteTransition(label = "dcBlink")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.4f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(800, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "dcAlpha"
+                )
+                Text(
+                    text = "Reconnecting\u2026",
+                    color = Color(0xFFFF9800).copy(alpha = alpha),
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val sorted = player.tokens.sortedWith(compareByDescending<com.example.ludosample.engine.Token> { it.isHome }
                     .thenByDescending { it.position >= 0 })
@@ -652,13 +674,13 @@ private fun GlassDiceContainer(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "diceBlink")
+    val infiniteTransition = rememberInfiniteTransition(label = "diceBlink")
     val blinkAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+        animationSpec = infiniteRepeatable(
             animation = tween(600, easing = LinearEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse
         ),
         label = "diceTrayBlink"
     )

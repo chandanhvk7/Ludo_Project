@@ -30,17 +30,24 @@ class MainActivity : ComponentActivity() {
                 var playerId by remember { mutableStateOf("") }
                 var playerName by remember { mutableStateOf("") }
 
+                var activeRoom by remember { mutableStateOf<String?>(null) }
+                var prefsLoaded by remember { mutableStateOf(false) }
+
                 LaunchedEffect(Unit) {
                     playerId = prefs.getPlayerId()
                     playerName = prefs.getPlayerName()
+                    activeRoom = prefs.getActiveRoom()
+                    prefsLoaded = true
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    if (playerId.isNotBlank()) {
+                    if (playerId.isNotBlank() && prefsLoaded) {
                         LudoNavGraph(
                             navController = navController,
                             playerId = playerId,
                             playerName = playerName,
+                            prefs = prefs,
+                            activeRoom = activeRoom,
                             modifier = Modifier.padding(innerPadding)
                         )
                     }
