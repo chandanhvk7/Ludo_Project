@@ -58,7 +58,8 @@ data class GameState(
     val maxPlayers: Int = 4,
     val turnStartedAt: Long = 0L,
     val consecutiveSixes: Int = 0,
-    val creatorPlayerId: String = ""
+    val creatorPlayerId: String = "",
+    val nextRoomCode: String = ""
 )
 
 data class MoveResult(

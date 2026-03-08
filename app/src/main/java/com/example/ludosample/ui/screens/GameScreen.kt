@@ -2,6 +2,7 @@ package com.example.ludosample.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -19,10 +20,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,6 +48,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -48,6 +58,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ludosample.engine.GamePhase
+import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.Player
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.ui.components.Dice
@@ -57,6 +68,8 @@ import com.example.ludosample.ui.theme.BoardBackdrop
 import com.example.ludosample.ui.theme.GlassBorder
 import com.example.ludosample.ui.theme.GlassHighlight
 import com.example.ludosample.ui.theme.GlassWhite
+import com.example.ludosample.ui.theme.ErrorRed
+import com.example.ludosample.ui.theme.GreenButton
 import com.example.ludosample.ui.theme.SurfaceVariant
 import com.example.ludosample.ui.theme.TextPrimary
 import com.example.ludosample.ui.theme.TextSecondary
@@ -72,11 +85,13 @@ private val colorMap = mapOf(
     PlayerColor.PURPLE to Color(0xFF6A1B9A)
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     viewModel: GameViewModel,
     currentPlayerId: String,
     onQuit: () -> Unit = {},
+    onPlayAgainNavigate: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val gameState by viewModel.gameState.collectAsState()
@@ -145,13 +160,18 @@ fun GameScreen(
     val canRoll = isMyTurn && gameState.phase == GamePhase.ROLLING && !showingNoMoves
 
     var showConfetti by remember { mutableStateOf(false) }
+    var showGameOverSheet by remember { mutableStateOf(false) }
     LaunchedEffect(gameState.phase) {
         if (gameState.phase == GamePhase.FINISHED) {
             showConfetti = true
-            delay(6000)
+            delay(3000)
+            showGameOverSheet = true
+            delay(3000)
             showConfetti = false
         }
     }
+
+    val playAgainRoom by viewModel.playAgainRoomCode.collectAsState()
 
     val statusText = when {
         showingNoMoves && diceTextVisible -> "Rolled ${gameState.diceValue} — No moves!"
@@ -204,6 +224,7 @@ fun GameScreen(
                 PlayerProfileCard(
                     player = topLeft,
                     isActive = topLeft.id == gameState.currentTurnPlayerId,
+                    remainingSeconds = remainingSeconds,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -214,6 +235,7 @@ fun GameScreen(
                 PlayerProfileCard(
                     player = topRight,
                     isActive = topRight.id == gameState.currentTurnPlayerId,
+                    remainingSeconds = remainingSeconds,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -245,7 +267,7 @@ fun GameScreen(
             LudoBoard(
                 boardType = gameState.boardType,
                 gameState = gameState,
-                validMoves = if (isMyTurn) validMoves else emptyList(),
+                validMoves = validMoves,
                 currentPlayerId = currentPlayerId,
                 onTokenTapped = { tokenIndex -> viewModel.onTokenSelected(tokenIndex) },
                 modifier = Modifier.fillMaxWidth()
@@ -265,6 +287,7 @@ fun GameScreen(
                 PlayerProfileCard(
                     player = bottomLeft,
                     isActive = bottomLeft.id == gameState.currentTurnPlayerId,
+                    remainingSeconds = remainingSeconds,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -275,6 +298,7 @@ fun GameScreen(
                 PlayerProfileCard(
                     player = bottomRight,
                     isActive = bottomRight.id == gameState.currentTurnPlayerId,
+                    remainingSeconds = remainingSeconds,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -309,46 +333,199 @@ fun GameScreen(
             modifier = Modifier.padding(vertical = 4.dp)
         )
 
-        // Game over
-        if (gameState.phase == GamePhase.FINISHED) {
-            val winner = gameState.players[gameState.winner]
-            Text(
-                text = "${winner?.name ?: "Unknown"} wins!",
-                color = Accent,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
     }
 
     if (showConfetti) {
         ConfettiOverlay()
     }
+
+    if (showGameOverSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { },
+            sheetState = sheetState,
+            containerColor = Color(0xF0131A2A),
+            contentColor = TextPrimary,
+            dragHandle = null
+        ) {
+            GameOverSheetContent(
+                gameState = gameState,
+                onPlayAgain = { viewModel.playAgain() },
+                onGoHome = onQuit
+            )
+        }
+    }
+
+    LaunchedEffect(playAgainRoom) {
+        val room = playAgainRoom
+        if (!room.isNullOrBlank()) {
+            onPlayAgainNavigate(room)
+        }
+    }
+
     } // outer Box
+}
+
+private val rankColorMap = mapOf(
+    PlayerColor.RED to Color(0xFFE57373),
+    PlayerColor.GREEN to Color(0xFF81C784),
+    PlayerColor.YELLOW to Color(0xFFFFD54F),
+    PlayerColor.BLUE to Color(0xFF64B5F6),
+    PlayerColor.ORANGE to Color(0xFFFFB74D),
+    PlayerColor.PURPLE to Color(0xFFCE93D8)
+)
+
+private val rankLabels = listOf("1st", "2nd", "3rd", "4th", "5th", "6th")
+private val rankColors = listOf(
+    Color(0xFFE8B931), Color(0xFFC0C0C0), Color(0xFFCD7F32),
+    Color(0xFF8B949E), Color(0xFF6E7681), Color(0xFF545D68)
+)
+
+@Composable
+private fun GameOverSheetContent(
+    gameState: GameState,
+    onPlayAgain: () -> Unit,
+    onGoHome: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Game Over",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Accent,
+            textAlign = TextAlign.Center
+        )
+
+        val winner = gameState.players[gameState.winner]
+        if (winner != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${winner.name} wins!",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(text = "Rankings", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        gameState.finishOrder.forEachIndexed { index, playerId ->
+            val player = gameState.players[playerId] ?: return@forEachIndexed
+            val pColor = rankColorMap[player.color] ?: Color.Gray
+            val isEliminated = player.isEliminated
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .background(SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = rankLabels.getOrElse(index) { "${index + 1}th" },
+                    color = rankColors.getOrElse(index) { TextSecondary },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(48.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(pColor.copy(alpha = if (isEliminated) 0.4f else 1f))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = player.name,
+                        color = TextPrimary.copy(alpha = if (isEliminated) 0.5f else 1f),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    if (isEliminated) {
+                        Text(
+                            text = "disconnected",
+                            color = ErrorRed.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "\u2694${player.kills}  \u2620${player.deaths}",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onPlayAgain,
+            colors = ButtonDefaults.buttonColors(containerColor = GreenButton),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Text("Play Again", style = MaterialTheme.typography.titleMedium)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = onGoHome,
+            colors = ButtonDefaults.buttonColors(containerColor = SurfaceVariant),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Text("Back to Home", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
 }
 
 @Composable
 private fun PlayerProfileCard(
     player: Player,
     isActive: Boolean,
+    remainingSeconds: Int = 30,
+    maxSeconds: Int = 30,
     modifier: Modifier = Modifier
 ) {
     val pColor = colorMap[player.color] ?: Color.Gray
     val shape = RoundedCornerShape(12.dp)
-    val borderMod = if (isActive) Modifier.border(2.dp, pColor, shape) else Modifier.border(1.dp, GlassBorder, shape)
 
-    Row(
-        modifier = modifier
-            .then(borderMod)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(GlassHighlight, GlassWhite)
-                ),
-                shape = shape
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val timerProgress = if (isActive) remainingSeconds.toFloat() / maxSeconds else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = timerProgress,
+        animationSpec = tween(900, easing = LinearEasing),
+        label = "profileTimer"
+    )
+
+    Box(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, if (isActive) pColor.copy(alpha = 0.3f) else GlassBorder, shape)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(GlassHighlight, GlassWhite)
+                    ),
+                    shape = shape
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         // Faux-3D avatar circle
         val initial = player.name.firstOrNull()?.uppercase() ?: "?"
         Box(
@@ -390,7 +567,9 @@ private fun PlayerProfileCard(
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                player.tokens.forEach { token ->
+                val sorted = player.tokens.sortedWith(compareByDescending<com.example.ludosample.engine.Token> { it.isHome }
+                    .thenByDescending { it.position >= 0 })
+                sorted.forEach { token ->
                     val indicatorSize = 10.dp
                     Box(modifier = Modifier.size(indicatorSize)) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -433,7 +612,32 @@ private fun PlayerProfileCard(
                 )
             }
         }
+    } // Row
+
+    if (isActive) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val cornerPx = 12.dp.toPx()
+            val strokeW = 3.dp.toPx()
+            val w = size.width - strokeW
+            val h = size.height - strokeW
+            val totalPerimeter = 2 * (w + h - 4 * cornerPx) + 2 * Math.PI.toFloat() * cornerPx
+            val drawLength = totalPerimeter * animatedProgress
+            drawRoundRect(
+                color = pColor,
+                topLeft = Offset(strokeW / 2, strokeW / 2),
+                size = Size(w, h),
+                cornerRadius = CornerRadius(cornerPx),
+                style = Stroke(
+                    width = strokeW,
+                    cap = StrokeCap.Round,
+                    pathEffect = PathEffect.dashPathEffect(
+                        floatArrayOf(drawLength, totalPerimeter), 0f
+                    )
+                )
+            )
+        }
     }
+    } // Box
 }
 
 @Composable
@@ -448,10 +652,20 @@ private fun GlassDiceContainer(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val borderColor = if (canRoll) currentPlayerColor else GlassBorder
+    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "diceBlink")
+    val blinkAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "diceTrayBlink"
+    )
+    val borderColor = if (canRoll) currentPlayerColor.copy(alpha = blinkAlpha) else GlassBorder
     Box(
         modifier = modifier
-            .border(2.dp, borderColor, shape)
+            .border(3.dp, borderColor, shape)
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(GlassHighlight, GlassWhite)
@@ -473,23 +687,31 @@ private fun GlassDiceContainer(
                 size = 48.dp,
                 playerColor = currentPlayerColor
             )
-            CircularTimerIndicator(remainingSeconds)
+            CircularTimerIndicator(remainingSeconds, isMyTurn = isMyTurn)
         }
     }
 }
 
 @Composable
-private fun CircularTimerIndicator(seconds: Int, maxSeconds: Int = 20) {
+private fun CircularTimerIndicator(
+    seconds: Int,
+    maxSeconds: Int = 30,
+    isMyTurn: Boolean = false
+) {
     val progress = seconds.toFloat() / maxSeconds
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(900, easing = LinearEasing),
         label = "timer"
     )
-    val timerColor = when {
-        seconds > 10 -> Color(0xFF66BB6A)
-        seconds > 5 -> Color(0xFFFFCA28)
-        else -> Color(0xFFEF5350)
+    val timerColor = if (isMyTurn) {
+        when {
+            seconds > 15 -> Color(0xFF66BB6A)
+            seconds > 7 -> Color(0xFFFFCA28)
+            else -> Color(0xFFEF5350)
+        }
+    } else {
+        Color(0xFF6E7681)
     }
 
     Box(

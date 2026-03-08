@@ -222,6 +222,11 @@ private fun PolygonBoardCanvas(
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
+    var lastDice by remember { androidx.compose.runtime.mutableIntStateOf(1) }
+    androidx.compose.runtime.LaunchedEffect(gameState.diceValue) {
+        gameState.diceValue?.let { lastDice = it }
+    }
+
     var canvasWidth by remember { mutableFloatStateOf(0f) }
     var canvasHeight by remember { mutableFloatStateOf(0f) }
     val animatedOffsets = remember {
@@ -251,15 +256,20 @@ private fun PolygonBoardCanvas(
                     } else {
                         val wasCaptured = prev.first >= 0 && token.position == -1 && !token.isHome
                         if (wasCaptured) {
-                            kotlinx.coroutines.delay(700)
+                            val capturerSteps = lastDice.coerceIn(1, 6)
+                            kotlinx.coroutines.delay((capturerSteps * 300 + 150).toLong())
                         }
-                        val waypoints = buildPolyPathWaypoints(
-                            config, prev.first, prev.second,
-                            token.position, token.isHome
-                        )
+                        val waypoints = if (wasCaptured) {
+                            buildPolyReverseCaptureWaypoints(prev.first)
+                        } else {
+                            buildPolyPathWaypoints(
+                                config, prev.first, prev.second,
+                                token.position, token.isHome
+                            )
+                        }
                         for ((pos, isHome) in waypoints) {
                             val wp = polygonTokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
-                            anim.animateTo(wp, animationSpec = tween(200))
+                            anim.animateTo(wp, animationSpec = tween(if (wasCaptured) 80 else 300))
                         }
                     }
                     prevPositions[key] = token.position to token.isHome
@@ -493,6 +503,19 @@ private fun polygonTokenOffset(
     }
     val homeStep = token.position - config.pathLength
     return layout.homeCellOffset(slotIndex, homeStep)
+}
+
+private fun buildPolyReverseCaptureWaypoints(
+    capturedRelativePos: Int
+): List<Pair<Int, Boolean>> {
+    val waypoints = mutableListOf<Pair<Int, Boolean>>()
+    var pos = capturedRelativePos - 1
+    while (pos >= 0) {
+        waypoints.add(pos to false)
+        pos--
+    }
+    waypoints.add(-1 to false)
+    return waypoints
 }
 
 private fun buildPolyPathWaypoints(

@@ -107,25 +107,20 @@ fun LudoNavGraph(
                 gameViewModel.connectToOnlineGame(roomCode, playerId)
             }
 
-            val gameState by gameViewModel.gameState.collectAsState()
-
-            if (gameState.phase == GamePhase.FINISHED) {
-                LaunchedEffect(Unit) {
-                    navController.navigate(Routes.gameOver(roomCode)) {
+            GameScreen(
+                viewModel = gameViewModel,
+                currentPlayerId = playerId,
+                onQuit = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                },
+                onPlayAgainNavigate = { newRoomCode ->
+                    navController.navigate(Routes.lobby("JOIN:$newRoomCode:$playerName")) {
                         popUpTo(Routes.HOME)
                     }
                 }
-            } else {
-                GameScreen(
-                    viewModel = gameViewModel,
-                    currentPlayerId = playerId,
-                    onQuit = {
-                        navController.navigate(Routes.HOME) {
-                            popUpTo(Routes.HOME) { inclusive = true }
-                        }
-                    }
-                )
-            }
+            )
         }
 
         composable(Routes.GAME_OVER) { backStackEntry ->

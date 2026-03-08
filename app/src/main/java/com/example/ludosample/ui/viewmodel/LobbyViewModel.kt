@@ -92,7 +92,7 @@ class LobbyViewModel : ViewModel() {
             try {
                 val actualBoardType = BoardType.forPlayerCount(actualCount)
                 val actualConfig = BoardConfig.forBoardType(actualBoardType)
-                val properSlots = actualConfig.assignSlots(actualCount)
+                val properSlots = actualConfig.assignSlots(actualCount).shuffled()
 
                 val sortedPlayers = currentState.players.values.sortedBy { it.slotIndex }
                 val reassignedPlayers = sortedPlayers.mapIndexed { i, player ->

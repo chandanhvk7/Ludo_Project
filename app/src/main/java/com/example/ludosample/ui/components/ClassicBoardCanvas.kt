@@ -265,6 +265,20 @@ fun ClassicBoardCanvas(
         ),
         label = "pulseScale"
     )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    var lastDice by remember { androidx.compose.runtime.mutableIntStateOf(1) }
+    androidx.compose.runtime.LaunchedEffect(gameState.diceValue) {
+        gameState.diceValue?.let { lastDice = it }
+    }
 
     var boardSize by remember { mutableFloatStateOf(0f) }
     val animatedOffsets = remember {
@@ -292,17 +306,22 @@ fun ClassicBoardCanvas(
                     } else {
                         val wasCaptured = prev.first >= 0 && token.position == -1 && !token.isHome
                         if (wasCaptured) {
-                            kotlinx.coroutines.delay(700)
+                            val capturerSteps = lastDice.coerceIn(1, 6)
+                            kotlinx.coroutines.delay((capturerSteps * 300 + 150).toLong())
                         }
                         val trail = mutableListOf(anim.value)
                         tokenTrails[key] = trail.toList()
-                        val waypoints = buildPathWaypoints(
-                            config, prev.first, prev.second,
-                            token.position, token.isHome
-                        )
+                        val waypoints = if (wasCaptured) {
+                            buildReverseCaptureWaypoints(config, prev.first, slotIndex)
+                        } else {
+                            buildPathWaypoints(
+                                config, prev.first, prev.second,
+                                token.position, token.isHome
+                            )
+                        }
                         for ((pos, isHome) in waypoints) {
                             val wp = tokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
-                            anim.animateTo(wp, animationSpec = tween(200))
+                            anim.animateTo(wp, animationSpec = tween(if (wasCaptured) 80 else 300))
                             trail.add(wp)
                             tokenTrails[key] = trail.toList()
                         }
@@ -340,8 +359,9 @@ fun ClassicBoardCanvas(
         drawTokenTrails(tokenTrails, gameState, cell)
         drawAllTokensAnimated(
             config, gameState, layout, cell, currentPlayerId, validMoves,
-            textMeasurer, animatedOffsets, pulseScale
+            textMeasurer, animatedOffsets, pulseScale, pulseAlpha
         )
+        drawFinishedCrowns(gameState, layout, cell, textMeasurer)
     }
 }
 
@@ -420,31 +440,53 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
 
         val fillColor = when {
             isStart -> QUADRANT_COLORS[slotForCell]!!.copy(alpha = 0.70f)
-            isSafe -> CellSafe
+            isSafe -> Color(0xFFD8DAE0)
             else -> CellDark
         }
 
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(fillColor.lighten(0.15f), fillColor),
-                startY = topLeft.y,
-                endY = topLeft.y + pathCellSize.height
-            ),
-            topLeft = topLeft,
-            size = pathCellSize,
-            cornerRadius = CornerRadius(cell * 0.1f)
-        )
-        // Glass sheen gradient
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
-                startY = topLeft.y,
-                endY = topLeft.y + pathCellSize.height * 0.5f
-            ),
-            topLeft = topLeft,
-            size = pathCellSize,
-            cornerRadius = CornerRadius(cell * 0.1f)
-        )
+        if (isSafe && !isStart) {
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFEEEFF2), Color(0xFFCACDD4)),
+                    startY = topLeft.y,
+                    endY = topLeft.y + pathCellSize.height
+                ),
+                topLeft = topLeft,
+                size = pathCellSize,
+                cornerRadius = CornerRadius(cell * 0.1f)
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.5f), Color.Transparent),
+                    startY = topLeft.y,
+                    endY = topLeft.y + pathCellSize.height * 0.45f
+                ),
+                topLeft = topLeft,
+                size = pathCellSize,
+                cornerRadius = CornerRadius(cell * 0.1f)
+            )
+        } else {
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(fillColor.lighten(0.15f), fillColor),
+                    startY = topLeft.y,
+                    endY = topLeft.y + pathCellSize.height
+                ),
+                topLeft = topLeft,
+                size = pathCellSize,
+                cornerRadius = CornerRadius(cell * 0.1f)
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                    startY = topLeft.y,
+                    endY = topLeft.y + pathCellSize.height * 0.5f
+                ),
+                topLeft = topLeft,
+                size = pathCellSize,
+                cornerRadius = CornerRadius(cell * 0.1f)
+            )
+        }
         drawRoundRect(
             color = CellBorder,
             topLeft = topLeft,
@@ -456,7 +498,7 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
         if (isStart) {
             drawStar(offset, cell * 0.2f, Color.White.copy(alpha = 0.6f))
         } else if (isSafe) {
-            drawStar(offset, cell * 0.25f, Color(0xFFE8B931).copy(alpha = 0.5f))
+            drawStar(offset, cell * 0.25f, Color(0xFF1B2838).copy(alpha = 0.4f))
         }
     }
 }
@@ -544,6 +586,58 @@ private fun DrawScope.drawCenter(layout: ClassicBoardLayout, cell: Float) {
     )
 }
 
+private fun DrawScope.drawFinishedCrowns(
+    gameState: GameState,
+    layout: ClassicBoardLayout,
+    cell: Float,
+    textMeasurer: TextMeasurer
+) {
+    val rankLabels = listOf("1st", "2nd", "3rd", "4th", "5th", "6th")
+    for ((playerId, player) in gameState.players) {
+        if (!player.isFinished) continue
+        val rank = gameState.finishOrder.indexOf(playerId)
+        if (rank < 0) continue
+
+        val center = layout.yardCenterOffset(player.slotIndex)
+        val color = PLAYER_COLORS[player.color] ?: Color.Gray
+
+        // Crown shape
+        val crownW = cell * 2.2f
+        val crownH = cell * 1.4f
+        val crownTop = center.y - crownH * 0.7f
+        val crownPath = Path().apply {
+            moveTo(center.x - crownW / 2, center.y - crownH * 0.1f)
+            lineTo(center.x - crownW / 2, crownTop + crownH * 0.35f)
+            lineTo(center.x - crownW * 0.25f, crownTop + crownH * 0.55f)
+            lineTo(center.x, crownTop)
+            lineTo(center.x + crownW * 0.25f, crownTop + crownH * 0.55f)
+            lineTo(center.x + crownW / 2, crownTop + crownH * 0.35f)
+            lineTo(center.x + crownW / 2, center.y - crownH * 0.1f)
+            close()
+        }
+        drawPath(crownPath, color = Color(0xFFE8B931).copy(alpha = 0.85f))
+        drawPath(crownPath, color = Color.White.copy(alpha = 0.3f), style = Stroke(width = 2f))
+
+        // Rank text below crown
+        val label = rankLabels.getOrElse(rank) { "${rank + 1}th" }
+        val rankResult = textMeasurer.measure(
+            label,
+            style = TextStyle(
+                color = color,
+                fontSize = (cell * 0.7f).sp,
+                fontWeight = FontWeight.Bold
+            )
+        )
+        drawText(
+            rankResult,
+            topLeft = Offset(
+                center.x - rankResult.size.width / 2,
+                center.y + crownH * 0.05f
+            )
+        )
+    }
+}
+
 private fun DrawScope.drawStar(center: Offset, outerRadius: Float, color: Color) {
     val path = Path()
     val innerRadius = outerRadius * 0.45f
@@ -584,15 +678,16 @@ private fun DrawScope.drawAllTokensAnimated(
     gameState: GameState,
     layout: ClassicBoardLayout,
     cell: Float,
-    currentPlayerId: String,
+    @Suppress("UNUSED_PARAMETER") currentPlayerId: String,
     validMoves: List<Int>,
     textMeasurer: TextMeasurer,
     animatedOffsets: Map<String, Animatable<Offset, AnimationVector2D>>,
-    pulseScale: Float
+    pulseScale: Float,
+    pulseAlpha: Float = 1f
 ) {
     val tokenRadius = cell * 0.32f
     val homeTokenRadius = cell * 0.25f
-    val isMyTurn = gameState.currentTurnPlayerId == currentPlayerId
+    val turnPlayerId = gameState.currentTurnPlayerId
 
     // Pre-compute stacking groups for tokens sharing the same cell
     val positionGroups = mutableMapOf<String, MutableList<Pair<String, Int>>>()
@@ -635,24 +730,28 @@ private fun DrawScope.drawAllTokensAnimated(
             val offset = baseOffset + nudge
             val radius = if (token.isHome) homeTokenRadius else tokenRadius
 
-            val isValid = isMyTurn && playerId == currentPlayerId && index in validMoves
+            val isValid = playerId == turnPlayerId && index in validMoves
             if (isValid) {
-                // Sharp outer glow ring
-                drawCircle(
-                    color = color.copy(alpha = 0.6f),
-                    radius = radius + cell * 0.10f,
-                    center = offset,
-                    style = Stroke(cell * 0.06f * pulseScale)
-                )
-                // Radial glow halo
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(color.copy(alpha = 0.5f), Color.Transparent),
+                        colors = listOf(color.copy(alpha = 0.7f * pulseAlpha), Color.Transparent),
                         center = offset,
-                        radius = (radius + cell * 0.18f) * pulseScale
+                        radius = (radius + cell * 0.30f) * pulseScale
                     ),
-                    radius = (radius + cell * 0.18f) * pulseScale,
+                    radius = (radius + cell * 0.30f) * pulseScale,
                     center = offset
+                )
+                drawCircle(
+                    color = color.copy(alpha = 0.85f * pulseAlpha),
+                    radius = radius + cell * 0.12f,
+                    center = offset,
+                    style = Stroke(cell * 0.07f * pulseScale)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.4f * pulseAlpha),
+                    radius = radius + cell * 0.06f,
+                    center = offset,
+                    style = Stroke(cell * 0.03f * pulseScale)
                 )
             }
 
@@ -763,6 +862,21 @@ private fun tokenOffset(
     }
     val homeStep = token.position - (config.pathLength - 1)
     return layout.homeCellOffset(slotIndex, homeStep)
+}
+
+private fun buildReverseCaptureWaypoints(
+    @Suppress("UNUSED_PARAMETER") config: BoardConfig,
+    capturedRelativePos: Int,
+    @Suppress("UNUSED_PARAMETER") slotIndex: Int
+): List<Pair<Int, Boolean>> {
+    val waypoints = mutableListOf<Pair<Int, Boolean>>()
+    var pos = capturedRelativePos - 1
+    while (pos >= 0) {
+        waypoints.add(pos to false)
+        pos--
+    }
+    waypoints.add(-1 to false)
+    return waypoints
 }
 
 private fun buildPathWaypoints(

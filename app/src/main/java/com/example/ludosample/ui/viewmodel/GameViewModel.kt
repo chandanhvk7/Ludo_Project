@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 private const val NO_MOVES_DISPLAY_MS = 1500L
 private const val AUTOPLAY_DELAY_MS = 600L
 
-private const val TURN_TIMEOUT_MS = 20_000L
+private const val TURN_TIMEOUT_MS = 30_000L
 private const val TIMER_TICK_MS = 1_000L
 
 class GameViewModel : ViewModel() {
@@ -33,7 +33,7 @@ class GameViewModel : ViewModel() {
     private val _validMoves = MutableStateFlow<List<Int>>(emptyList())
     val validMoves: StateFlow<List<Int>> = _validMoves.asStateFlow()
 
-    private val _remainingSeconds = MutableStateFlow(20)
+    private val _remainingSeconds = MutableStateFlow(30)
     val remainingSeconds: StateFlow<Int> = _remainingSeconds.asStateFlow()
 
     private val _showingNoMoves = MutableStateFlow(false)
@@ -53,6 +53,9 @@ class GameViewModel : ViewModel() {
     private var isOnline = false
     private var onlinePlayerId = ""
     private var onlineRoomCode = ""
+
+    private val _playAgainRoomCode = MutableStateFlow<String?>(null)
+    val playAgainRoomCode: StateFlow<String?> = _playAgainRoomCode.asStateFlow()
 
     // ── Online mode ─────────────────────────────────────────────────
 
@@ -76,12 +79,17 @@ class GameViewModel : ViewModel() {
                 }
                 _gameState.value = state
 
-                if (state.phase == GamePhase.MOVING && state.currentTurnPlayerId == playerId) {
+                if (state.phase == GamePhase.MOVING) {
+                    val turnPlayer = state.currentTurnPlayerId
                     val moves = GameEngine.getValidMoves(
-                        config, state, playerId, state.diceValue ?: 0
+                        config, state, turnPlayer, state.diceValue ?: 0
                     )
                     _validMoves.value = moves
-                    scheduleAutoPlayIfSingleMove(moves)
+                    if (turnPlayer == playerId) {
+                        scheduleAutoPlayIfSingleMove(moves)
+                    } else {
+                        autoPlayJob?.cancel()
+                    }
                 } else {
                     _validMoves.value = emptyList()
                     autoPlayJob?.cancel()
@@ -287,7 +295,7 @@ class GameViewModel : ViewModel() {
 
     private fun startTurnTimer() {
         timerJob?.cancel()
-        _remainingSeconds.value = 20
+        _remainingSeconds.value = 30
 
         timerJob = viewModelScope.launch {
             val startTime = System.currentTimeMillis()
@@ -324,10 +332,31 @@ class GameViewModel : ViewModel() {
         return state.players[state.currentTurnPlayerId]?.color ?: PlayerColor.RED
     }
 
+    fun playAgain() {
+        if (!isOnline) return
+        val state = _gameState.value
+        if (state.phase != GamePhase.FINISHED) return
+
+        viewModelScope.launch {
+            val existing = repository.getNextRoomCode(onlineRoomCode)
+            if (existing != null) {
+                _playAgainRoomCode.value = existing
+            } else {
+                val newRoom = repository.createRoom(
+                    playerId = onlinePlayerId,
+                    playerName = state.players[onlinePlayerId]?.name ?: "Player",
+                    maxPlayers = state.maxPlayers
+                )
+                repository.setNextRoomCode(onlineRoomCode, newRoom)
+                _playAgainRoomCode.value = newRoom
+            }
+        }
+    }
+
     private fun scheduleRoomCleanup(roomCode: String) {
         if (cleanupJob != null) return
         cleanupJob = viewModelScope.launch {
-            delay(30_000L)
+            delay(5 * 60 * 1000L)
             repository.deleteFinishedRoom(roomCode)
         }
     }

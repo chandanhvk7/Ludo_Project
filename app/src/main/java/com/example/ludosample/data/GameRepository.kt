@@ -199,7 +199,8 @@ class GameRepository {
             maxPlayers = snapshot.child("maxPlayers").getValue(Int::class.java) ?: 4,
             turnStartedAt = snapshot.child("turnStartedAt").getValue(Long::class.java) ?: 0L,
             consecutiveSixes = snapshot.child("consecutiveSixes").getValue(Int::class.java) ?: 0,
-            creatorPlayerId = snapshot.child("creatorPlayerId").getValue(String::class.java) ?: ""
+            creatorPlayerId = snapshot.child("creatorPlayerId").getValue(String::class.java) ?: "",
+            nextRoomCode = snapshot.child("nextRoomCode").getValue(String::class.java) ?: ""
         )
     }
 
@@ -262,8 +263,25 @@ class GameRepository {
             "maxPlayers" to state.maxPlayers,
             "turnStartedAt" to ServerValue.TIMESTAMP,
             "consecutiveSixes" to state.consecutiveSixes,
-            "creatorPlayerId" to state.creatorPlayerId
+            "creatorPlayerId" to state.creatorPlayerId,
+            "nextRoomCode" to state.nextRoomCode
         )
+    }
+
+    suspend fun setNextRoomCode(currentRoomCode: String, nextRoomCode: String) {
+        try {
+            gamesRef.child(currentRoomCode).child("nextRoomCode")
+                .setValue(nextRoomCode).await()
+        } catch (_: Exception) { }
+    }
+
+    suspend fun getNextRoomCode(roomCode: String): String? {
+        return try {
+            val snap = gamesRef.child(roomCode).child("nextRoomCode").get().await()
+            snap.getValue(String::class.java)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     suspend fun deleteFinishedRoom(roomCode: String) {
