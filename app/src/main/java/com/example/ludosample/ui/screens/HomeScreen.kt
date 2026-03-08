@@ -36,12 +36,13 @@ import com.example.ludosample.ui.theme.TextSecondary
 @Composable
 fun HomeScreen(
     initialName: String,
+    initialRoomCode: String = "",
     onCreateRoom: (playerName: String) -> Unit,
     onJoinRoom: (playerName: String, roomCode: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var playerName by rememberSaveable { mutableStateOf(initialName) }
-    var roomCode by rememberSaveable { mutableStateOf("") }
+    var roomCode by rememberSaveable { mutableStateOf(initialRoomCode) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = TextPrimary,
