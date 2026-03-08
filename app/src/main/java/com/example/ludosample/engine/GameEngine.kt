@@ -187,7 +187,7 @@ object GameEngine {
         )
 
         var captured = false
-        if (!reachedHome && newPosition in 0 until config.pathLength) {
+        if (!reachedHome && newPosition in 0 until config.pathLength - 1) {
             val absolutePos = config.toAbsolutePosition(newPosition, player.slotIndex)
             if (absolutePos !in config.safeSpotIndices) {
                 val (stateAfterCapture, didCapture) = applyCapturesAt(
@@ -223,18 +223,19 @@ object GameEngine {
     ): Pair<GameState, Boolean> {
         var newState = state
         var captured = false
+        var totalKills = 0
 
         for ((pid, player) in state.players) {
             if (pid == movingPlayerId) continue
             if (player.isFinished || player.isEliminated) continue
 
-            var playerChanged = false
+            var capturedCount = 0
             val updatedTokens = player.tokens.map { token ->
-                if (!token.isHome && token.position in 0 until config.pathLength) {
+                if (!token.isHome && token.position in 0 until config.pathLength - 1) {
                     val tokenAbsPos = config.toAbsolutePosition(token.position, player.slotIndex)
                     if (tokenAbsPos == absolutePos) {
                         captured = true
-                        playerChanged = true
+                        capturedCount++
                         Token()
                     } else {
                         token
@@ -244,13 +245,26 @@ object GameEngine {
                 }
             }
 
-            if (playerChanged) {
+            if (capturedCount > 0) {
+                totalKills += capturedCount
                 newState = newState.copy(
                     players = newState.players.toMutableMap().also {
-                        it[pid] = player.copy(tokens = updatedTokens)
+                        it[pid] = player.copy(
+                            tokens = updatedTokens,
+                            deaths = player.deaths + capturedCount
+                        )
                     }
                 )
             }
+        }
+
+        if (totalKills > 0) {
+            val mover = newState.players[movingPlayerId]!!
+            newState = newState.copy(
+                players = newState.players.toMutableMap().also {
+                    it[movingPlayerId] = mover.copy(kills = mover.kills + totalKills)
+                }
+            )
         }
 
         return Pair(newState, captured)
@@ -309,7 +323,7 @@ object GameEngine {
         return resolveAfterMove(moveResult, playerId, diceValue)
     }
 
-    private fun eliminatePlayer(state: GameState, playerId: String): GameState {
+    fun eliminatePlayer(state: GameState, playerId: String): GameState {
         val player = state.players[playerId] ?: return state
         val eliminatedPlayer = player.copy(
             isEliminated = true,

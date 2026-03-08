@@ -31,7 +31,7 @@ sealed class BoardConfig(
         safeSpotIndices = buildSafeSpots(6, 13)
     )
 
-    val homePosition: Int get() = pathLength + homeColumnLength
+    val homePosition: Int get() = pathLength + homeColumnLength - 1
 
     val slotColors: List<PlayerColor> get() = PlayerColor.forSlotCount(totalSlots)
 

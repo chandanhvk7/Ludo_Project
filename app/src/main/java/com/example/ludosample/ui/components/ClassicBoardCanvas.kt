@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -40,9 +41,27 @@ import com.example.ludosample.engine.BoardConfig
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.engine.Token
+import com.example.ludosample.ui.theme.BoardDark
+import com.example.ludosample.ui.theme.CellBorder
+import com.example.ludosample.ui.theme.CellDark
+import com.example.ludosample.ui.theme.CellSafe
+import com.example.ludosample.ui.theme.GlassBorder
+import com.example.ludosample.ui.theme.TokenShadow
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+private fun Color.lighten(f: Float) = Color(
+    (red + (1f - red) * f).coerceIn(0f, 1f),
+    (green + (1f - green) * f).coerceIn(0f, 1f),
+    (blue + (1f - blue) * f).coerceIn(0f, 1f), alpha
+)
+
+private fun Color.darken(f: Float) = Color(
+    (red * (1f - f)).coerceIn(0f, 1f),
+    (green * (1f - f)).coerceIn(0f, 1f),
+    (blue * (1f - f)).coerceIn(0f, 1f), alpha
+)
 
 private val OffsetToVector: TwoWayConverter<Offset, AnimationVector2D> =
     TwoWayConverter(
@@ -271,6 +290,10 @@ fun ClassicBoardCanvas(
                         anim.snapTo(target)
                         tokenTrails.remove(key)
                     } else {
+                        val wasCaptured = prev.first >= 0 && token.position == -1 && !token.isHome
+                        if (wasCaptured) {
+                            kotlinx.coroutines.delay(700)
+                        }
                         val trail = mutableListOf(anim.value)
                         tokenTrails[key] = trail.toList()
                         val waypoints = buildPathWaypoints(
@@ -279,7 +302,7 @@ fun ClassicBoardCanvas(
                         )
                         for ((pos, isHome) in waypoints) {
                             val wp = tokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
-                            anim.animateTo(wp, animationSpec = tween(120))
+                            anim.animateTo(wp, animationSpec = tween(200))
                             trail.add(wp)
                             tokenTrails[key] = trail.toList()
                         }
@@ -323,7 +346,7 @@ fun ClassicBoardCanvas(
 }
 
 private fun DrawScope.drawBoard(layout: ClassicBoardLayout, cell: Float) {
-    drawRect(Color.White, size = size)
+    drawRect(BoardDark, size = size)
 
     val quadrantSize = cell * 6
     val quadrants = listOf(
@@ -333,15 +356,37 @@ private fun DrawScope.drawBoard(layout: ClassicBoardLayout, cell: Float) {
         Offset(0f, cell * 9) to layout.slotAtPhysicalPosition(3)
     )
     for ((offset, slot) in quadrants) {
+        val qColor = QUADRANT_COLORS[slot]!!
         drawRoundRect(
-            color = QUADRANT_COLORS[slot]!!.copy(alpha = 0.3f),
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    qColor.copy(alpha = 0.45f),
+                    qColor.copy(alpha = 0.22f)
+                ),
+                startY = offset.y,
+                endY = offset.y + quadrantSize
+            ),
+            topLeft = offset,
+            size = Size(quadrantSize, quadrantSize),
+            cornerRadius = CornerRadius(cell * 0.3f)
+        )
+        // Glass sheen gradient overlay
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.12f),
+                    Color.Transparent
+                ),
+                startY = offset.y,
+                endY = offset.y + quadrantSize * 0.45f
+            ),
             topLeft = offset,
             size = Size(quadrantSize, quadrantSize),
             cornerRadius = CornerRadius(cell * 0.3f)
         )
         val inset = cell * 0.8f
         drawRoundRect(
-            color = QUADRANT_COLORS[slot]!!,
+            color = qColor.copy(alpha = 0.5f),
             topLeft = Offset(offset.x + inset, offset.y + inset),
             size = Size(quadrantSize - inset * 2, quadrantSize - inset * 2),
             cornerRadius = CornerRadius(cell * 0.4f),
@@ -349,7 +394,7 @@ private fun DrawScope.drawBoard(layout: ClassicBoardLayout, cell: Float) {
         )
     }
 
-    val gridColor = Color.Gray.copy(alpha = 0.3f)
+    val gridColor = Color.White.copy(alpha = 0.06f)
     val strokeWidth = 1f
     for (i in 0..GRID_SIZE) {
         val pos = i * cell
@@ -374,19 +419,34 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
         val slotForCell = i / config.cellsPerSegment
 
         val fillColor = when {
-            isStart -> QUADRANT_COLORS[slotForCell]!!.copy(alpha = 0.6f)
-            isSafe -> Color(0xFFF5F5F5)
-            else -> Color.White
+            isStart -> QUADRANT_COLORS[slotForCell]!!.copy(alpha = 0.70f)
+            isSafe -> CellSafe
+            else -> CellDark
         }
 
         drawRoundRect(
-            color = fillColor,
+            brush = Brush.verticalGradient(
+                colors = listOf(fillColor.lighten(0.15f), fillColor),
+                startY = topLeft.y,
+                endY = topLeft.y + pathCellSize.height
+            ),
+            topLeft = topLeft,
+            size = pathCellSize,
+            cornerRadius = CornerRadius(cell * 0.1f)
+        )
+        // Glass sheen gradient
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                startY = topLeft.y,
+                endY = topLeft.y + pathCellSize.height * 0.5f
+            ),
             topLeft = topLeft,
             size = pathCellSize,
             cornerRadius = CornerRadius(cell * 0.1f)
         )
         drawRoundRect(
-            color = Color.Gray.copy(alpha = 0.5f),
+            color = CellBorder,
             topLeft = topLeft,
             size = pathCellSize,
             cornerRadius = CornerRadius(cell * 0.1f),
@@ -394,9 +454,9 @@ private fun DrawScope.drawPath(layout: ClassicBoardLayout, cell: Float, config: 
         )
 
         if (isStart) {
-            drawStar(offset, cell * 0.2f, Color.White.copy(alpha = 0.8f))
+            drawStar(offset, cell * 0.2f, Color.White.copy(alpha = 0.6f))
         } else if (isSafe) {
-            drawStar(offset, cell * 0.25f, Color(0xFFBDBDBD))
+            drawStar(offset, cell * 0.25f, Color(0xFFE8B931).copy(alpha = 0.5f))
         }
     }
 }
@@ -409,13 +469,30 @@ private fun DrawScope.drawHomeColumns(layout: ClassicBoardLayout, cell: Float) {
             val cellSize = Size(cell * 0.85f, cell * 0.85f)
             val topLeft = Offset(offset.x - cellSize.width / 2, offset.y - cellSize.height / 2)
             drawRoundRect(
-                color = color.copy(alpha = 0.4f),
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        color.copy(alpha = 0.70f),
+                        color.copy(alpha = 0.40f)
+                    ),
+                    startY = topLeft.y,
+                    endY = topLeft.y + cellSize.height
+                ),
                 topLeft = topLeft,
                 size = cellSize,
                 cornerRadius = CornerRadius(cell * 0.1f)
             )
             drawRoundRect(
-                color = color,
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                    startY = topLeft.y,
+                    endY = topLeft.y + cellSize.height * 0.5f
+                ),
+                topLeft = topLeft,
+                size = cellSize,
+                cornerRadius = CornerRadius(cell * 0.1f)
+            )
+            drawRoundRect(
+                color = color.copy(alpha = 0.75f),
                 topLeft = topLeft,
                 size = cellSize,
                 cornerRadius = CornerRadius(cell * 0.1f),
@@ -432,8 +509,9 @@ private fun DrawScope.drawCenter(layout: ClassicBoardLayout, cell: Float) {
     val bottom = cell * 9
     val cx = (left + right) / 2
     val cy = (top + bottom) / 2
+    val centerSize = right - left
 
-    drawRect(Color.White, topLeft = Offset(left, top), size = Size(right - left, bottom - top))
+    drawRect(BoardDark, topLeft = Offset(left, top), size = Size(centerSize, centerSize))
 
     val triangleData = listOf(
         layout.slotAtPhysicalPosition(0) to listOf(Offset(left, top), Offset(left, bottom), Offset(cx, cy)),
@@ -450,9 +528,20 @@ private fun DrawScope.drawCenter(layout: ClassicBoardLayout, cell: Float) {
             lineTo(vertices[2].x, vertices[2].y)
             close()
         }
-        drawPath(path, color = color.copy(alpha = 0.85f))
-        drawPath(path, color = Color.White, style = Stroke(width = 2f))
+        drawPath(path, color = color.copy(alpha = 0.70f))
+        drawPath(path, color = GlassBorder, style = Stroke(width = 2f))
     }
+
+    // Glassy dome overlay
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+            center = Offset(cx, cy),
+            radius = centerSize / 2
+        ),
+        radius = centerSize / 2,
+        center = Offset(cx, cy)
+    )
 }
 
 private fun DrawScope.drawStar(center: Offset, outerRadius: Float, color: Color) {
@@ -511,10 +600,10 @@ private fun DrawScope.drawAllTokensAnimated(
         if (player.isEliminated) continue
         player.tokens.forEachIndexed { index, token ->
             if (token.position == -1 || token.isHome) return@forEachIndexed
-            val posKey = if (token.position < config.pathLength) {
+            val posKey = if (token.position < config.pathLength - 1) {
                 "p${config.toAbsolutePosition(token.position, player.slotIndex)}"
             } else {
-                "h${player.slotIndex}_${token.position - config.pathLength}"
+                "h${player.slotIndex}_${token.position - (config.pathLength - 1)}"
             }
             positionGroups.getOrPut(posKey) { mutableListOf() }.add(playerId to index)
         }
@@ -531,10 +620,10 @@ private fun DrawScope.drawAllTokensAnimated(
 
             // Compute stacking nudge for path/home-column tokens
             val nudge = if (token.position >= 0 && !token.isHome) {
-                val posKey = if (token.position < config.pathLength) {
+                val posKey = if (token.position < config.pathLength - 1) {
                     "p${config.toAbsolutePosition(token.position, player.slotIndex)}"
                 } else {
-                    "h${player.slotIndex}_${token.position - config.pathLength}"
+                    "h${player.slotIndex}_${token.position - (config.pathLength - 1)}"
                 }
                 val group = positionGroups[posKey] ?: emptyList()
                 if (group.size > 1) {
@@ -548,20 +637,63 @@ private fun DrawScope.drawAllTokensAnimated(
 
             val isValid = isMyTurn && playerId == currentPlayerId && index in validMoves
             if (isValid) {
+                // Sharp outer glow ring
                 drawCircle(
-                    color = color.copy(alpha = 0.3f),
-                    radius = (radius + cell * 0.14f) * pulseScale,
-                    center = offset
+                    color = color.copy(alpha = 0.6f),
+                    radius = radius + cell * 0.10f,
+                    center = offset,
+                    style = Stroke(cell * 0.06f * pulseScale)
                 )
+                // Radial glow halo
                 drawCircle(
-                    color = Color.White,
-                    radius = radius + cell * 0.06f,
+                    brush = Brush.radialGradient(
+                        colors = listOf(color.copy(alpha = 0.5f), Color.Transparent),
+                        center = offset,
+                        radius = (radius + cell * 0.18f) * pulseScale
+                    ),
+                    radius = (radius + cell * 0.18f) * pulseScale,
                     center = offset
                 )
             }
 
-            drawCircle(color = Color.White, radius = radius + 2f, center = offset)
-            drawCircle(color = color, radius = radius, center = offset)
+            // Drop shadow
+            drawCircle(
+                color = TokenShadow,
+                radius = radius * 0.95f,
+                center = offset + Offset(cell * 0.04f, cell * 0.06f)
+            )
+            // White outer ring
+            drawCircle(
+                color = Color.White.copy(alpha = 0.85f),
+                radius = radius + cell * 0.03f,
+                center = offset
+            )
+            // Base with radial gradient
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(color.lighten(0.3f), color, color.darken(0.3f)),
+                    center = Offset(offset.x - radius * 0.25f, offset.y - radius * 0.3f),
+                    radius = radius * 1.2f
+                ),
+                radius = radius,
+                center = offset
+            )
+            // Rim highlight arc
+            val arcRect = Size(radius * 2f, radius * 2f)
+            val arcTopLeft = Offset(offset.x - radius, offset.y - radius)
+            drawArc(
+                color = Color.White.copy(alpha = 0.35f),
+                startAngle = 200f, sweepAngle = 140f,
+                useCenter = false,
+                style = Stroke(radius * 0.12f),
+                topLeft = arcTopLeft, size = arcRect
+            )
+            // Specular highlight
+            drawCircle(
+                color = Color.White.copy(alpha = 0.45f),
+                radius = radius * 0.22f,
+                center = Offset(offset.x - radius * 0.25f, offset.y - radius * 0.35f)
+            )
 
             if (token.isHome) {
                 val checkResult = textMeasurer.measure(
@@ -585,7 +717,7 @@ private fun DrawScope.drawAllTokensAnimated(
                     initial,
                     style = TextStyle(
                         color = Color.White,
-                        fontSize = (radius * 0.9f).sp,
+                        fontSize = (radius * 0.6f).sp,
                         fontWeight = FontWeight.Bold
                     )
                 )
@@ -625,11 +757,11 @@ private fun tokenOffset(
     if (token.isHome) {
         return layout.homeTriangleCenterOffset(slotIndex, tokenIndex)
     }
-    if (token.position < config.pathLength) {
+    if (token.position < config.pathLength - 1) {
         val absolutePos = config.toAbsolutePosition(token.position, slotIndex)
         return layout.pathCellOffset(absolutePos)
     }
-    val homeStep = token.position - config.pathLength
+    val homeStep = token.position - (config.pathLength - 1)
     return layout.homeCellOffset(slotIndex, homeStep)
 }
 
@@ -644,7 +776,8 @@ private fun buildPathWaypoints(
     if (newPos <= oldPos) return listOf(newPos to newIsHome)
 
     val endPos = if (newIsHome) config.homePosition else newPos
-    return ((oldPos + 1)..endPos.coerceAtMost(config.homePosition)).map { it to (it == config.homePosition && newIsHome) }
+    return ((oldPos + 1)..endPos.coerceAtMost(config.homePosition))
+        .map { it to (it == config.homePosition && newIsHome) }
         .ifEmpty { listOf(newPos to newIsHome) }
 }
 

@@ -41,7 +41,9 @@ data class Player(
     val tokens: List<Token> = List(4) { Token() },
     val isFinished: Boolean = false,
     val consecutiveTimeouts: Int = 0,
-    val isEliminated: Boolean = false
+    val isEliminated: Boolean = false,
+    val kills: Int = 0,
+    val deaths: Int = 0
 )
 
 data class GameState(

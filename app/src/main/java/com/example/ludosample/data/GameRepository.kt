@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeout
 class GameRepository {
 
     companion object {
-        private const val STALE_ROOM_MS = 2 * 60 * 60 * 1000L // 2 hours
+        private const val STALE_ROOM_MS = 30 * 60 * 1000L // 30 minutes
     }
 
     private val db = FirebaseDatabase.getInstance("https://ludo-sample-f1ce3-default-rtdb.asia-southeast1.firebasedatabase.app")
@@ -67,6 +67,8 @@ class GameRepository {
                     "isFinished" to false,
                     "consecutiveTimeouts" to 0,
                     "isEliminated" to false,
+                    "kills" to 0,
+                    "deaths" to 0,
                     "tokens" to List(4) { mapOf("position" to -1, "isHome" to false) }
                 )
             )
@@ -114,6 +116,8 @@ class GameRepository {
             "isFinished" to false,
             "consecutiveTimeouts" to 0,
             "isEliminated" to false,
+            "kills" to 0,
+            "deaths" to 0,
             "tokens" to List(4) { mapOf("position" to -1, "isHome" to false) }
         )
 
@@ -149,6 +153,20 @@ class GameRepository {
 
     suspend fun deleteRoom(roomCode: String) {
         gamesRef.child(roomCode).removeValue().await()
+    }
+
+    fun setupOnDisconnect(roomCode: String, playerId: String) {
+        val playerRef = gamesRef.child(roomCode).child("players").child(playerId)
+        playerRef.child("isEliminated").onDisconnect().setValue(true)
+        playerRef.child("tokens").onDisconnect().setValue(
+            List(4) { mapOf("position" to -1, "isHome" to false) }
+        )
+    }
+
+    fun cancelOnDisconnect(roomCode: String, playerId: String) {
+        val playerRef = gamesRef.child(roomCode).child("players").child(playerId)
+        playerRef.child("isEliminated").onDisconnect().cancel()
+        playerRef.child("tokens").onDisconnect().cancel()
     }
 
     // ── Serialization helpers ───────────────────────────────────────
@@ -208,7 +226,9 @@ class GameRepository {
             tokens = tokens,
             isFinished = snapshot.child("isFinished").getValue(Boolean::class.java) ?: false,
             consecutiveTimeouts = snapshot.child("consecutiveTimeouts").getValue(Int::class.java) ?: 0,
-            isEliminated = snapshot.child("isEliminated").getValue(Boolean::class.java) ?: false
+            isEliminated = snapshot.child("isEliminated").getValue(Boolean::class.java) ?: false,
+            kills = snapshot.child("kills").getValue(Int::class.java) ?: 0,
+            deaths = snapshot.child("deaths").getValue(Int::class.java) ?: 0
         )
     }
 
@@ -224,7 +244,9 @@ class GameRepository {
                 },
                 "isFinished" to player.isFinished,
                 "consecutiveTimeouts" to player.consecutiveTimeouts,
-                "isEliminated" to player.isEliminated
+                "isEliminated" to player.isEliminated,
+                "kills" to player.kills,
+                "deaths" to player.deaths
             )
         }
 

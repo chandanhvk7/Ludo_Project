@@ -249,13 +249,17 @@ private fun PolygonBoardCanvas(
                     if (prev == null || (prev.first == token.position && prev.second == token.isHome)) {
                         anim.snapTo(target)
                     } else {
+                        val wasCaptured = prev.first >= 0 && token.position == -1 && !token.isHome
+                        if (wasCaptured) {
+                            kotlinx.coroutines.delay(700)
+                        }
                         val waypoints = buildPolyPathWaypoints(
                             config, prev.first, prev.second,
                             token.position, token.isHome
                         )
                         for ((pos, isHome) in waypoints) {
                             val wp = polygonTokenOffset(config, Token(pos, isHome), slotIndex, index, layout)
-                            anim.animateTo(wp, animationSpec = tween(120))
+                            anim.animateTo(wp, animationSpec = tween(200))
                         }
                     }
                     prevPositions[key] = token.position to token.isHome

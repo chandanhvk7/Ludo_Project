@@ -118,7 +118,12 @@ fun LudoNavGraph(
             } else {
                 GameScreen(
                     viewModel = gameViewModel,
-                    currentPlayerId = playerId
+                    currentPlayerId = playerId,
+                    onQuit = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.HOME) { inclusive = true }
+                        }
+                    }
                 )
             }
         }
