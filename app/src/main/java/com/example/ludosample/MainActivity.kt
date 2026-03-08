@@ -33,6 +33,19 @@ class MainActivity : ComponentActivity() {
                 var activeRoom by remember { mutableStateOf<String?>(null) }
                 var prefsLoaded by remember { mutableStateOf(false) }
 
+                val deepLinkRoom = remember {
+                    intent?.data?.let { uri ->
+                        when {
+                            uri.scheme == "ludosample" && uri.host == "join" ->
+                                uri.pathSegments.firstOrNull()?.uppercase()
+                            uri.scheme == "https" && uri.host == "chandanhvk7.github.io"
+                                && uri.path?.startsWith("/Ludo_Project/join") == true ->
+                                uri.getQueryParameter("code")?.uppercase()
+                            else -> null
+                        }
+                    }
+                }
+
                 LaunchedEffect(Unit) {
                     playerId = prefs.getPlayerId()
                     playerName = prefs.getPlayerName()
@@ -48,6 +61,7 @@ class MainActivity : ComponentActivity() {
                             playerName = playerName,
                             prefs = prefs,
                             activeRoom = activeRoom,
+                            deepLinkRoom = deepLinkRoom,
                             modifier = Modifier.padding(innerPadding)
                         )
                     }

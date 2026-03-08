@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Ludo Game</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1A1A2E;
+            color: #E0E0E0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .card {
+            background: #16213E;
+            border-radius: 20px;
+            padding: 40px 32px;
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .dice { font-size: 48px; margin-bottom: 16px; }
+        h1 { color: #E8B931; font-size: 24px; margin-bottom: 8px; }
+        .subtitle { color: #9E9E9E; font-size: 14px; margin-bottom: 28px; }
+        .code-box {
+            background: #0F3460;
+            border: 2px solid #E8B931;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+        .code-label { color: #9E9E9E; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; }
+        .code {
+            color: #E8B931;
+            font-size: 32px;
+            font-weight: bold;
+            letter-spacing: 6px;
+            margin-top: 4px;
+            user-select: all;
+        }
+        .status {
+            color: #81C784;
+            font-size: 14px;
+            margin-bottom: 20px;
+            min-height: 20px;
+        }
+        .btn {
+            display: inline-block;
+            background: #E8B931;
+            color: #1A1A2E;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 14px 32px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            margin-bottom: 12px;
+            width: 100%;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #E8B931;
+            border: 1px solid #E8B931;
+        }
+        .help {
+            color: #757575;
+            font-size: 12px;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="dice">&#x1F3B2;</div>
+        <h1>Ludo Game Invite</h1>
+        <p class="subtitle">You've been invited to play!</p>
+
+        <div class="code-box">
+            <div class="code-label">Room Code</div>
+            <div class="code" id="roomCode">------</div>
+        </div>
+
+        <p class="status" id="status">Opening app...</p>
+
+        <button class="btn" id="openBtn" onclick="openApp()">Open in Ludo App</button>
+        <br>
+        <button class="btn btn-secondary" onclick="copyCode()">Copy Room Code</button>
+
+        <p class="help">
+            Don't have the app?<br>
+            Download it and enter the room code above to join.
+        </p>
+    </div>
+
+    <script>
+        var params = new URLSearchParams(window.location.search);
+        var code = (params.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 6);
+        var codeEl = document.getElementById('roomCode');
+        var statusEl = document.getElementById('status');
+
+        if (code) {
+            codeEl.textContent = code;
+        } else {
+            codeEl.textContent = '------';
+            statusEl.textContent = 'No room code provided.';
+        }
+
+        function openApp() {
+            if (!code) return;
+            var intentUrl = 'intent://join/' + code +
+                '#Intent;scheme=ludosample;package=com.example.ludosample;end';
+            statusEl.textContent = 'Opening app...';
+            window.location = intentUrl;
+            setTimeout(function() {
+                statusEl.textContent = 'App not found. Copy the code and enter it manually.';
+            }, 2000);
+        }
+
+        function copyCode() {
+            if (!code) return;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(code).then(function() {
+                    statusEl.textContent = 'Copied!';
+                    setTimeout(function() { statusEl.textContent = ''; }, 2000);
+                });
+            } else {
+                var range = document.createRange();
+                range.selectNode(codeEl);
+                window.getSelection().removeAllRanges();
+                window.getSelection().addRange(range);
+                document.execCommand('copy');
+                statusEl.textContent = 'Copied!';
+                setTimeout(function() { statusEl.textContent = ''; }, 2000);
+            }
+        }
+
+        if (code) {
+            openApp();
+        }
+    </script>
+</body>
+</html>

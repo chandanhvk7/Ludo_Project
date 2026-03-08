@@ -42,23 +42,31 @@ fun LudoNavGraph(
     playerName: String,
     prefs: PlayerPreferences,
     activeRoom: String? = null,
+    deepLinkRoom: String? = null,
     modifier: Modifier = Modifier
 ) {
     var rejoinHandled by remember { mutableStateOf(false) }
 
-    LaunchedEffect(activeRoom) {
-        if (rejoinHandled || activeRoom.isNullOrBlank()) {
-            rejoinHandled = true
-            return@LaunchedEffect
-        }
+    LaunchedEffect(activeRoom, deepLinkRoom) {
+        if (rejoinHandled) return@LaunchedEffect
         rejoinHandled = true
-        val repo = GameRepository()
-        if (repo.isPlayerInActiveGame(activeRoom, playerId)) {
-            navController.navigate(Routes.game(activeRoom)) {
+
+        if (!activeRoom.isNullOrBlank()) {
+            val repo = GameRepository()
+            if (repo.isPlayerInActiveGame(activeRoom, playerId)) {
+                navController.navigate(Routes.game(activeRoom)) {
+                    popUpTo(Routes.HOME)
+                }
+                return@LaunchedEffect
+            } else {
+                prefs.setActiveRoom(null)
+            }
+        }
+
+        if (!deepLinkRoom.isNullOrBlank() && playerName.isNotBlank()) {
+            navController.navigate(Routes.lobby("JOIN:$deepLinkRoom:$playerName")) {
                 popUpTo(Routes.HOME)
             }
-        } else {
-            prefs.setActiveRoom(null)
         }
     }
 

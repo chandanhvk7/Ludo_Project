@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.ludosample",
+      "sha256_cert_fingerprints": [
+        "16:62:08:6E:93:C7:46:1E:00:9F:6F:0A:F8:8D:91:99:DC:35:C3:53:45:2B:65:A5:EA:DD:1D:BF:59:E3:54:6F"
+      ]
+    }
+  }
+]

@@ -1,7 +1,9 @@
 package com.example.ludosample.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,23 +25,34 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.ludosample.engine.BoardType
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.ui.theme.Accent
 import com.example.ludosample.ui.theme.Background
 import com.example.ludosample.ui.theme.ErrorRed
+import com.example.ludosample.ui.theme.GlassBorder
+import com.example.ludosample.ui.theme.GlassHighlight
+import com.example.ludosample.ui.theme.GlassWhite
 import com.example.ludosample.ui.theme.SurfaceVariant
 import com.example.ludosample.ui.theme.TextMuted
 import com.example.ludosample.ui.theme.TextPrimary
@@ -107,6 +120,18 @@ fun LobbyScreen(
             return
         }
 
+        val clipboardManager = LocalClipboardManager.current
+        val context = LocalContext.current
+        var showCopied by remember { mutableStateOf(false) }
+        val roomCode = gameState.roomCode
+
+        LaunchedEffect(showCopied) {
+            if (showCopied) {
+                delay(2000)
+                showCopied = false
+            }
+        }
+
         Text(
             text = "Room Code",
             color = TextSecondary,
@@ -114,20 +139,97 @@ fun LobbyScreen(
         )
 
         Text(
-            text = gameState.roomCode.ifBlank { "------" },
+            text = roomCode.ifBlank { "------" },
             color = Accent,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             letterSpacing = MaterialTheme.typography.displaySmall.letterSpacing * 2
         )
 
-        Text(
-            text = "Share this code with friends",
-            color = TextMuted,
-            style = MaterialTheme.typography.bodySmall
-        )
+        if (showCopied) {
+            Text(
+                text = "Copied!",
+                color = Accent.copy(alpha = 0.8f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        } else {
+            Text(
+                text = "Tap below to copy or share",
+                color = TextMuted,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (roomCode.isNotBlank()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+
+                Box(
+                    modifier = Modifier
+                        .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(GlassHighlight, GlassWhite)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(roomCode))
+                            showCopied = true
+                        }
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "\uD83D\uDCCB  Copy",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .border(1.dp, Accent.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                        .background(
+                            Accent.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .clickable {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    "Join my Ludo game!\n\nhttps://chandanhvk7.github.io/Ludo_Project/join?code=$roomCode\n\nRoom Code: $roomCode"
+                                )
+                            }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, "Share room code")
+                            )
+                        }
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "\uD83D\uDD17  Share",
+                        color = Accent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         // Player count selector (creator only)
         if (isCreator) {

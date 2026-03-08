@@ -83,6 +83,10 @@ object GameEngine {
     ): GameState {
         val diceValue = state.diceValue ?: return state
         val player = state.players[playerId] ?: return state
+        if (tokenIndex !in player.tokens.indices) return state
+
+        val validMoves = getValidMoves(config, state, playerId, diceValue)
+        if (tokenIndex !in validMoves) return state
 
         val updatedPlayer = player.copy(consecutiveTimeouts = 0)
         val stateWithReset = state.copy(

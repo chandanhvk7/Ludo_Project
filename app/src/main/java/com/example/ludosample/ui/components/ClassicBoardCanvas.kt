@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -47,6 +48,7 @@ import com.example.ludosample.ui.theme.CellDark
 import com.example.ludosample.ui.theme.CellSafe
 import com.example.ludosample.ui.theme.GlassBorder
 import com.example.ludosample.ui.theme.TokenShadow
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -68,6 +70,8 @@ private val OffsetToVector: TwoWayConverter<Offset, AnimationVector2D> =
         convertToVector = { AnimationVector2D(it.x, it.y) },
         convertFromVector = { Offset(it.v1, it.v2) }
     )
+
+private data class BurstEvent(val offset: Offset, val color: Color, val isHome: Boolean)
 
 private const val GRID_SIZE = 15
 
@@ -287,6 +291,71 @@ fun ClassicBoardCanvas(
     val prevPositions = remember { mutableStateMapOf<String, Pair<Int, Boolean>>() }
     val tokenTrails = remember { mutableStateMapOf<String, List<Offset>>() }
 
+    val activeBursts = remember { mutableStateMapOf<Long, BurstEvent>() }
+    val burstAnimatables = remember { mutableStateMapOf<Long, Animatable<Float, *>>() }
+    val prevGameState = remember { mutableStateOf<GameState?>(null) }
+
+    LaunchedEffect(gameState) {
+        val prev = prevGameState.value
+        prevGameState.value = gameState
+        if (prev == null || boardSize <= 0f) return@LaunchedEffect
+        val layout = ClassicBoardLayout(boardSize, boardRotation)
+
+        for ((pid, player) in gameState.players) {
+            if (player.isEliminated) continue
+            val prevPlayer = prev.players[pid] ?: continue
+            player.tokens.forEachIndexed { index, token ->
+                val prevToken = prevPlayer.tokens.getOrNull(index) ?: return@forEachIndexed
+
+                val justReachedHome = token.isHome && !prevToken.isHome
+                if (justReachedHome) {
+                    val color = PLAYER_COLORS[player.color] ?: Color.White
+                    val pos = layout.homeTriangleCenterOffset(player.slotIndex, index)
+                    val id = System.nanoTime() + index
+                    activeBursts[id] = BurstEvent(pos, color, true)
+                    val anim = Animatable(0f)
+                    burstAnimatables[id] = anim
+                    launch {
+                        anim.animateTo(1f, animationSpec = tween(600))
+                        activeBursts.remove(id)
+                        burstAnimatables.remove(id)
+                    }
+                }
+            }
+        }
+
+        for ((pid, prevPlayer) in prev.players) {
+            val currentPlayer = gameState.players[pid] ?: continue
+            prevPlayer.tokens.forEachIndexed { index, prevToken ->
+                val curToken = currentPlayer.tokens.getOrNull(index) ?: return@forEachIndexed
+                val wasCaptured = prevToken.position >= 0 && !prevToken.isHome &&
+                        curToken.position == -1 && !curToken.isHome
+                if (wasCaptured) {
+                    val absPos = config.toAbsolutePosition(prevToken.position, prevPlayer.slotIndex)
+                    val pos = layout.pathCellOffset(absPos)
+                    val attacker = gameState.players.values
+                        .firstOrNull { p ->
+                            p.id != pid && !p.isEliminated &&
+                            p.tokens.any { t ->
+                                !t.isHome && t.position >= 0 &&
+                                config.toAbsolutePosition(t.position, p.slotIndex) == absPos
+                            }
+                        }
+                    val attackerColor = attacker?.let { PLAYER_COLORS[it.color] } ?: Color.White
+                    val id = System.nanoTime() + index + 1000
+                    activeBursts[id] = BurstEvent(pos, attackerColor, false)
+                    val anim = Animatable(0f)
+                    burstAnimatables[id] = anim
+                    launch {
+                        anim.animateTo(1f, animationSpec = tween(500))
+                        activeBursts.remove(id)
+                        burstAnimatables.remove(id)
+                    }
+                }
+            }
+        }
+    }
+
     if (boardSize > 0f) {
         val layout = ClassicBoardLayout(boardSize, boardRotation)
         for ((playerId, player) in gameState.players) {
@@ -362,6 +431,61 @@ fun ClassicBoardCanvas(
             textMeasurer, animatedOffsets, pulseScale, pulseAlpha
         )
         drawFinishedCrowns(gameState, layout, cell, textMeasurer)
+
+        for ((id, burst) in activeBursts) {
+            val progress = burstAnimatables[id]?.value ?: 0f
+            if (progress <= 0f) continue
+            val maxRadius = cell * (if (burst.isHome) 2.5f else 2f)
+            val radius = maxRadius * progress
+            val fadeAlpha = (1f - progress).coerceIn(0f, 1f)
+
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        burst.color.copy(alpha = 0.6f * fadeAlpha),
+                        burst.color.copy(alpha = 0.2f * fadeAlpha),
+                        Color.Transparent
+                    ),
+                    center = burst.offset,
+                    radius = radius.coerceAtLeast(1f)
+                ),
+                radius = radius,
+                center = burst.offset
+            )
+            drawCircle(
+                color = burst.color.copy(alpha = 0.8f * fadeAlpha),
+                radius = radius * 0.7f,
+                center = burst.offset,
+                style = Stroke(cell * 0.08f * (1f - progress * 0.5f))
+            )
+            if (burst.isHome) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.5f * fadeAlpha),
+                    radius = radius * 0.4f,
+                    center = burst.offset,
+                    style = Stroke(cell * 0.05f)
+                )
+            }
+            val sparkCount = if (burst.isHome) 8 else 6
+            for (i in 0 until sparkCount) {
+                val angle = (2 * PI * i / sparkCount).toFloat()
+                val sparkDist = radius * 0.85f
+                val sparkEnd = burst.offset + Offset(
+                    cos(angle) * sparkDist,
+                    sin(angle) * sparkDist
+                )
+                val sparkStart = burst.offset + Offset(
+                    cos(angle) * sparkDist * 0.5f,
+                    sin(angle) * sparkDist * 0.5f
+                )
+                drawLine(
+                    color = burst.color.copy(alpha = fadeAlpha * 0.7f),
+                    start = sparkStart,
+                    end = sparkEnd,
+                    strokeWidth = cell * 0.04f
+                )
+            }
+        }
     }
 }
 
