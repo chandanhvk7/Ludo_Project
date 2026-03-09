@@ -6,6 +6,8 @@ import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.Player
 import com.example.ludosample.engine.PlayerColor
 import com.example.ludosample.engine.Token
+import com.example.ludosample.engine.ChatMessage
+import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -21,7 +23,8 @@ import kotlinx.coroutines.withTimeout
 class GameRepository {
 
     companion object {
-        private const val STALE_ROOM_MS = 30 * 60 * 1000L // 30 minutes
+        private const val STALE_ROOM_MS = 2 * 60 * 60 * 1000L // 2 hours
+        private const val FINISHED_ROOM_MS = 5 * 60 * 1000L // 5 minutes after creation
     }
 
     private val db = FirebaseDatabase.getInstance("https://ludo-sample-f1ce3-default-rtdb.asia-southeast1.firebasedatabase.app")
@@ -30,7 +33,7 @@ class GameRepository {
     /**
      * Returns the server time offset to correct for device clock skew.
      */
-    private val serverTimeOffset: Flow<Long> = callbackFlow {
+    val serverTimeOffset: Flow<Long> = callbackFlow {
         val ref = db.getReference(".info/serverTimeOffset")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -329,20 +332,76 @@ class GameRepository {
         }
     }
 
+    // ── Chat ─────────────────────────────────────────────────────────
+
+    fun observeMessages(roomCode: String): Flow<ChatMessage> = callbackFlow {
+        val query = gamesRef.child(roomCode).child("messages")
+            .orderByChild("timestamp").limitToLast(50)
+        val listener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val msg = snapshotToChatMessage(snapshot) ?: return
+                trySend(msg)
+            }
+            override fun onChildChanged(s: DataSnapshot, p: String?) {}
+            override fun onChildRemoved(s: DataSnapshot) {}
+            override fun onChildMoved(s: DataSnapshot, p: String?) {}
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        query.addChildEventListener(listener)
+        awaitClose { query.removeEventListener(listener) }
+    }
+
+    suspend fun sendMessage(roomCode: String, message: ChatMessage) {
+        try {
+            val data = mapOf(
+                "senderId" to message.senderId,
+                "senderName" to message.senderName,
+                "senderColor" to message.senderColor,
+                "type" to message.type,
+                "content" to message.content,
+                "timestamp" to ServerValue.TIMESTAMP
+            )
+            gamesRef.child(roomCode).child("messages").push().setValue(data).await()
+        } catch (_: Exception) { }
+    }
+
+    private fun snapshotToChatMessage(snapshot: DataSnapshot): ChatMessage? {
+        val id = snapshot.key ?: return null
+        return ChatMessage(
+            id = id,
+            senderId = snapshot.child("senderId").getValue(String::class.java) ?: "",
+            senderName = snapshot.child("senderName").getValue(String::class.java) ?: "",
+            senderColor = snapshot.child("senderColor").getValue(String::class.java) ?: "",
+            type = snapshot.child("type").getValue(String::class.java) ?: "text",
+            content = snapshot.child("content").getValue(String::class.java) ?: "",
+            timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0
+        )
+    }
+
     suspend fun deleteFinishedRoom(roomCode: String) {
         try {
             gamesRef.child(roomCode).removeValue().await()
         } catch (_: Exception) { }
     }
 
-    private suspend fun cleanupStaleRooms() {
+    suspend fun cleanupStaleRooms() {
         try {
-            val cutoff = System.currentTimeMillis() - STALE_ROOM_MS
-            val snapshot = gamesRef.orderByChild("createdAt").endAt(cutoff.toDouble()).get().await()
+            val snapshot = gamesRef.get().await()
+            val now = System.currentTimeMillis()
+            val staleCutoff = now - STALE_ROOM_MS
+            val finishedCutoff = now - FINISHED_ROOM_MS
             for (child in snapshot.children) {
-                child.ref.removeValue()
+                val createdAt = child.child("createdAt").getValue(Long::class.java) ?: 0L
+                val phase = child.child("phase").getValue(String::class.java) ?: ""
+                val isFinished = phase == GamePhase.FINISHED.name
+                val isStale = createdAt < staleCutoff
+                val isFinishedOld = isFinished && createdAt < finishedCutoff
+
+                if (isStale || isFinishedOld) {
+                    child.ref.removeValue()
+                }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
     }
 
     private fun generateRoomCode(): String {

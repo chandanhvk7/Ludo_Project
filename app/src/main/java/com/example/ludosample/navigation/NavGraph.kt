@@ -47,6 +47,8 @@ fun LudoNavGraph(
 ) {
     var rejoinHandled by remember { mutableStateOf(false) }
     var pendingDeepLinkRoom by remember { mutableStateOf(deepLinkRoom) }
+    val topScope = rememberCoroutineScope()
+    var currentPlayerName by remember { mutableStateOf(playerName) }
 
     LaunchedEffect(activeRoom, deepLinkRoom) {
         if (rejoinHandled) return@LaunchedEffect
@@ -82,9 +84,13 @@ fun LudoNavGraph(
                 initialName = playerName,
                 initialRoomCode = pendingDeepLinkRoom ?: "",
                 onCreateRoom = { name ->
+                    currentPlayerName = name
+                    topScope.launch { prefs.setPlayerName(name) }
                     navController.navigate(Routes.lobby("CREATE:$name"))
                 },
                 onJoinRoom = { name, code ->
+                    currentPlayerName = name
+                    topScope.launch { prefs.setPlayerName(name) }
                     pendingDeepLinkRoom = null
                     navController.navigate(Routes.lobby("JOIN:$code:$name"))
                 }
@@ -167,7 +173,7 @@ fun LudoNavGraph(
                 },
                 onPlayAgainNavigate = { newRoomCode ->
                     scope.launch { prefs.setActiveRoom(null) }
-                    navController.navigate(Routes.lobby("JOIN:$newRoomCode:$playerName")) {
+                    navController.navigate(Routes.lobby("JOIN:$newRoomCode:$currentPlayerName")) {
                         popUpTo(Routes.HOME)
                     }
                 }

@@ -68,3 +68,36 @@ data class MoveResult(
     val captured: Boolean = false,
     val enteredHome: Boolean = false
 )
+
+data class ChatMessage(
+    val id: String = "",
+    val senderId: String = "",
+    val senderName: String = "",
+    val senderColor: String = "",
+    val type: String = "text",
+    val content: String = "",
+    val timestamp: Long = 0
+)
+
+object ChatStickers {
+    val all: LinkedHashMap<String, String> = linkedMapOf(
+        "laughing" to "\uD83D\uDE02",
+        "crying" to "\uD83D\uDE2D",
+        "angry" to "\uD83D\uDE21",
+        "thinking" to "\uD83E\uDD14",
+        "fire" to "\uD83D\uDD25",
+        "skull" to "\uD83D\uDC80",
+        "crown" to "\uD83D\uDC51",
+        "clown" to "\uD83E\uDD21",
+        "heart" to "\u2764\uFE0F",
+        "thumbs_up" to "\uD83D\uDC4D",
+        "thumbs_down" to "\uD83D\uDC4E",
+        "eyes" to "\uD83D\uDC40",
+        "gg" to "GG",
+        "oops" to "Oops!",
+        "nice" to "Nice!",
+        "hurry" to "Hurry up!"
+    )
+
+    fun display(key: String): String = all[key] ?: key
+}

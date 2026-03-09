@@ -11,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,23 +21,37 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +76,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ludosample.engine.ChatMessage
+import com.example.ludosample.engine.ChatStickers
 import com.example.ludosample.engine.GamePhase
 import com.example.ludosample.engine.GameState
 import com.example.ludosample.engine.Player
@@ -175,6 +193,9 @@ fun GameScreen(
     }
 
     val playAgainRoom by viewModel.playAgainRoomCode.collectAsState()
+    val chatMessages by viewModel.chatMessages.collectAsState()
+    val unreadCount by viewModel.unreadCount.collectAsState()
+    var showChatSheet by remember { mutableStateOf(false) }
 
     val statusText = when {
         showingNoMoves && diceTextVisible -> "Rolled ${gameState.diceValue} — No moves!"
@@ -309,22 +330,36 @@ fun GameScreen(
             }
         }
 
-        // Centered dice
+        // Centered dice + chat icon
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
-            GlassDiceContainer(
-                diceValue = displayDice,
-                rollId = rollId,
-                canRoll = canRoll,
-                isMyTurn = isMyTurn,
-                onRoll = { viewModel.onDiceRoll() },
-                remainingSeconds = remainingSeconds,
-                currentPlayerColor = turnColor
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                GlassDiceContainer(
+                    diceValue = displayDice,
+                    rollId = rollId,
+                    canRoll = canRoll,
+                    isMyTurn = isMyTurn,
+                    onRoll = { viewModel.onDiceRoll() },
+                    remainingSeconds = remainingSeconds,
+                    currentPlayerColor = turnColor
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                ChatIconButton(
+                    unreadCount = unreadCount,
+                    onClick = {
+                        showChatSheet = true
+                        viewModel.isChatOpen = true
+                        viewModel.clearUnread()
+                    }
+                )
+            }
         }
 
         // Status text
@@ -342,8 +377,43 @@ fun GameScreen(
         ConfettiOverlay()
     }
 
+    // Chat bottom sheet
+    if (showChatSheet) {
+        val chatSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        DisposableEffect(Unit) {
+            onDispose {
+                viewModel.isChatOpen = false
+            }
+        }
+        ModalBottomSheet(
+            onDismissRequest = {
+                showChatSheet = false
+                viewModel.isChatOpen = false
+            },
+            sheetState = chatSheetState,
+            containerColor = Color(0xF0131A2A),
+            contentColor = TextPrimary
+        ) {
+            ChatSheetContent(
+                messages = chatMessages,
+                currentPlayerId = currentPlayerId,
+                onSendText = { text ->
+                    viewModel.sendChatMessage("text", text)
+                },
+                onSendSticker = { key ->
+                    viewModel.sendChatMessage("sticker", key)
+                    showChatSheet = false
+                    viewModel.isChatOpen = false
+                }
+            )
+        }
+    }
+
     if (showGameOverSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { false }
+        )
         ModalBottomSheet(
             onDismissRequest = { },
             sheetState = sheetState,
@@ -763,6 +833,201 @@ private fun CircularTimerIndicator(
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+// ── Chat UI Components ───────────────────────────────────────────
+
+@Composable
+private fun ChatIconButton(
+    unreadCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(
+                    brush = Brush.verticalGradient(listOf(GlassHighlight, GlassWhite)),
+                    shape = CircleShape
+                )
+                .border(1.dp, GlassBorder, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Chat,
+                contentDescription = "Chat",
+                tint = TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .size(18.dp)
+                    .background(ErrorRed, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (unreadCount > 9) "9+" else "$unreadCount",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatSheetContent(
+    messages: List<ChatMessage>,
+    currentPlayerId: String,
+    onSendText: (String) -> Unit,
+    onSendSticker: (String) -> Unit
+) {
+    val listState = rememberLazyListState()
+    var inputText by remember { mutableStateOf("") }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp)
+            .padding(horizontal = 12.dp)
+    ) {
+        // Sticker row
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            items(ChatStickers.all.entries.toList()) { (key, display) ->
+                val isEmoji = display.length <= 2 || display.any { it.code > 0x2000 }
+                Box(
+                    modifier = Modifier
+                        .background(SurfaceVariant, RoundedCornerShape(20.dp))
+                        .clickable { onSendSticker(key) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = display,
+                        fontSize = if (isEmoji) 22.sp else 13.sp,
+                        fontWeight = if (!isEmoji) FontWeight.Bold else null,
+                        color = if (!isEmoji) Accent else Color.Unspecified
+                    )
+                }
+            }
+        }
+
+        // Message list
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .height(200.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(messages, key = { it.id }) { msg ->
+                val isMe = msg.senderId == currentPlayerId
+                val senderColor = try {
+                    colorMap[PlayerColor.valueOf(msg.senderColor)] ?: Color.Gray
+                } catch (_: Exception) { Color.Gray }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+                ) {
+                    if (!isMe) {
+                        Text(
+                            text = msg.senderName,
+                            color = senderColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 8.dp, bottom = 1.dp)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = 260.dp)
+                            .background(
+                                if (isMe) senderColor.copy(alpha = 0.2f)
+                                else SurfaceVariant,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        if (msg.type == "sticker") {
+                            val display = ChatStickers.display(msg.content)
+                            Text(text = display, fontSize = 28.sp)
+                        } else {
+                            Text(
+                                text = msg.content,
+                                color = TextPrimary,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Input row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                placeholder = { Text("Message...", color = TextSecondary, fontSize = 13.sp) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = GlassBorder,
+                    cursorColor = Accent
+                ),
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = {
+                    val text = inputText.trim()
+                    if (text.isNotBlank()) {
+                        onSendText(text)
+                        inputText = ""
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Send,
+                    contentDescription = "Send",
+                    tint = Accent
+                )
+            }
+        }
+
     }
 }
 

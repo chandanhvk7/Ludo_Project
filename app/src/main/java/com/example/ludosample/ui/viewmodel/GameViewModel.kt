@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.ludosample.data.GameRepository
 import com.example.ludosample.engine.BoardConfig
 import com.example.ludosample.engine.BoardType
+import com.example.ludosample.engine.ChatMessage
 import com.example.ludosample.engine.GameEngine
 import com.example.ludosample.engine.GamePhase
 import com.example.ludosample.engine.GameState
@@ -15,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val NO_MOVES_DISPLAY_MS = 1500L
@@ -57,9 +59,24 @@ class GameViewModel : ViewModel() {
     private var isOnline = false
     private var onlinePlayerId = ""
     private var onlineRoomCode = ""
+    private var serverOffset = 0L
+    private var hasGameFinished = false
 
     private val _playAgainRoomCode = MutableStateFlow<String?>(null)
     val playAgainRoomCode: StateFlow<String?> = _playAgainRoomCode.asStateFlow()
+
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _latestBubble = MutableStateFlow<ChatMessage?>(null)
+    val latestBubble: StateFlow<ChatMessage?> = _latestBubble.asStateFlow()
+
+    private val _unreadCount = MutableStateFlow(0)
+    val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
+
+    var isChatOpen = false
+    private var chatJob: Job? = null
+    private var initialChatLoaded = false
 
     // ── Online mode ─────────────────────────────────────────────────
 
@@ -72,8 +89,18 @@ class GameViewModel : ViewModel() {
         startConnectionObserver(roomCode, playerId)
         startDisconnectMonitor()
 
+        startChatObserver(roomCode)
+
+        viewModelScope.launch {
+            try {
+                serverOffset = repository.serverTimeOffset.first()
+            } catch (_: Exception) { }
+        }
+
         listenerJob = viewModelScope.launch {
             repository.listenToGame(roomCode).collect { state ->
+                if (hasGameFinished) return@collect
+
                 config = BoardConfig.forBoardType(state.boardType)
                 val prevDice = _gameState.value.diceValue
                 if (state.diceValue != null && prevDice == null) {
@@ -104,8 +131,14 @@ class GameViewModel : ViewModel() {
                     timerJob?.cancel()
                 }
 
-                if (state.phase == GamePhase.FINISHED && state.creatorPlayerId == playerId) {
-                    scheduleRoomCleanup(roomCode)
+                if (state.phase == GamePhase.FINISHED) {
+                    hasGameFinished = true
+                    disconnectMonitorJob?.cancel()
+                    connectionJob?.cancel()
+                    autoPlayJob?.cancel()
+                    if (state.creatorPlayerId == playerId) {
+                        cleanupFinishedRoom(roomCode)
+                    }
                 }
             }
         }
@@ -223,8 +256,9 @@ class GameViewModel : ViewModel() {
         timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (true) {
-                val elapsed = System.currentTimeMillis() - turnStartedAt
-                val remaining = ((TURN_TIMEOUT_MS - elapsed) / 1000).toInt().coerceAtLeast(0)
+                val serverNow = System.currentTimeMillis() + serverOffset
+                val elapsed = serverNow - turnStartedAt
+                val remaining = ((TURN_TIMEOUT_MS - elapsed) / 1000).toInt().coerceIn(0, 30)
                 _remainingSeconds.value = remaining
 
                 if (remaining <= 0) {
@@ -371,12 +405,17 @@ class GameViewModel : ViewModel() {
     }
 
     fun playAgain() {
-        if (!isOnline) return
+        if (!isOnline || !hasGameFinished) return
         val state = _gameState.value
-        if (state.phase != GamePhase.FINISHED) return
 
         viewModelScope.launch {
-            val existing = repository.getNextRoomCode(onlineRoomCode)
+            var existing: String? = null
+            for (attempt in 1..3) {
+                existing = repository.getNextRoomCode(onlineRoomCode)
+                if (existing != null) break
+                delay(1000L)
+            }
+
             if (existing != null) {
                 _playAgainRoomCode.value = existing
             } else {
@@ -391,10 +430,56 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    private fun scheduleRoomCleanup(roomCode: String) {
+    // ── Chat ─────────────────────────────────────────────────────────
+
+    private fun startChatObserver(roomCode: String) {
+        chatJob?.cancel()
+        chatJob = viewModelScope.launch {
+            repository.observeMessages(roomCode).collect { msg ->
+                _chatMessages.value = _chatMessages.value + msg
+                if (initialChatLoaded) {
+                    _latestBubble.value = msg
+                    if (!isChatOpen) {
+                        _unreadCount.value++
+                    }
+                    launch {
+                        delay(3500)
+                        if (_latestBubble.value?.id == msg.id) {
+                            _latestBubble.value = null
+                        }
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            delay(1500)
+            initialChatLoaded = true
+        }
+    }
+
+    fun sendChatMessage(type: String, content: String) {
+        if (!isOnline) return
+        val player = _gameState.value.players[onlinePlayerId] ?: return
+        val msg = ChatMessage(
+            senderId = onlinePlayerId,
+            senderName = player.name,
+            senderColor = player.color.name,
+            type = type,
+            content = content
+        )
+        viewModelScope.launch {
+            repository.sendMessage(onlineRoomCode, msg)
+        }
+    }
+
+    fun clearUnread() {
+        _unreadCount.value = 0
+    }
+
+    private fun cleanupFinishedRoom(roomCode: String) {
         if (cleanupJob != null) return
         cleanupJob = viewModelScope.launch {
-            delay(5 * 60 * 1000L)
+            delay(30_000L)
             repository.deleteFinishedRoom(roomCode)
         }
     }
@@ -407,5 +492,6 @@ class GameViewModel : ViewModel() {
         autoPlayJob?.cancel()
         disconnectMonitorJob?.cancel()
         connectionJob?.cancel()
+        chatJob?.cancel()
     }
 }

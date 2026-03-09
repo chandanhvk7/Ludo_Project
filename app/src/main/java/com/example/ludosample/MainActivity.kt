@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import com.example.ludosample.data.GameRepository
 import com.example.ludosample.data.PlayerPreferences
 import com.example.ludosample.navigation.LudoNavGraph
 import com.example.ludosample.ui.theme.LudoSampleTheme
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
                     playerName = prefs.getPlayerName()
                     activeRoom = prefs.getActiveRoom()
                     prefsLoaded = true
+                    GameRepository().cleanupStaleRooms()
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
